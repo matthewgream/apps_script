@@ -15,9 +15,10 @@ function system_report () {
 function system_setup () {
   var setup_functions = util_functions_find (v => (v != "system_setup" && v.endsWith ("_setup")));
   setup_functions.forEach (util_functions_call);
-  Logger.log ("system_setup: " + setup_functions.map (v => v.replace ("_setup", "")).join (", "));
+  var m = "setup - " + setup_functions.map (v => v.replace ("_setup", "")).join (", ");
+  log ("system", m); Logger.log ("system: " + m);
 
-  function __timerSetup (f, n, a, b, c) { if (f (n, a, b, c) == true) Logger.log ("Timer for '" + n + "' did not exist, will be created"); }
+  function __timerSetup (f, n, a, b, c) { if (f (n, a, b, c) == true) log ("system", "Timer for '" + n + "' did not exist, will be created"); }
   __timerSetup (timer_createMinutes, "runEveryMinute", 1);
   __timerSetup (timer_createHours, "runEveryHour", 1);
   __timerSetup (timer_createDaily, "runEveryDayAt5am", 5, 0);
@@ -93,8 +94,8 @@ function __log_queueWriter (f) {
   if (m.length > 0) f (m);
 }
 function __log_queueProcess () {
-  __log_queueWriter (function (m) { util_sheet_rowPushAndHide (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet),
-      __log_row, __log_col_start + __log_row + ":" + __log_col_end + (__log_row + m.length - 1), __log_size, m.reverse ()); });
+  __log_queueWriter (m => util_sheet_rowPushAndHide (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet),
+      __log_row, __log_col_start + __log_row + ":" + __log_col_end + (__log_row + m.length - 1), __log_size, m.reverse ()));
 }
 function __log_queueTrim (n) {
   util_sheet_rowPrune (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet), n);
@@ -114,10 +115,10 @@ function log_flush () {
   __log_queueProcess ();
 }
 function log_process () {
-  util_lock_wrapper ("Document", util_lock_seconds (0), function () { if (!log_suspend) __log_queueProcess (); });
+  util_lock_wrapper ("Document", util_lock_seconds (0), () => { if (!log_suspend) __log_queueProcess (); });
 }
 function log (x, m) {
-  if (Array.isArray (m)) m.forEach (function (mm) { __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), x, mm ]) });
+  if (Array.isArray (m)) m.forEach (mm => __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), x, mm ]));
   else __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), x, m ]);
 }
 function log_setup () {
@@ -146,10 +147,8 @@ function STORE_LIST (s, f) {
   var l = store_lst ();
   var t = {}; Object.entries (l).forEach (([k, v]) => util_tree_push (t, util_str_split (k, ";"), util_str_isnum (v) ? (v * 1.0) : v));
   var r = util_tree_flat (t, ",").map (v => [v.n, v.v]).concat ([[ "_current", util_date_str_ISO () ]]);
-  if (!util_is_nullOrZero (s) && !util_is_nullOrZero (s = s.split (";")))
-    r = r.filter (rr => s.some (ss => rr [0].startsWith (ss)));
-  if (!util_is_nullOrZero (f) && !util_is_nullOrZero (f = f.split (";")))
-    r = r.filter (rr => ! f.some (ff => rr [0].startsWith (ff)));
+  if (!util_is_nullOrZero (s) && !util_is_nullOrZero (s = s.split (";"))) r = r.filter (rr => s.some (ss => rr [0].startsWith (ss)));
+  if (!util_is_nullOrZero (f) && !util_is_nullOrZero (f = f.split (";"))) r = r.filter (rr => ! f.some (ff => rr [0].startsWith (ff)));
   return r.sort ((a, b) => (a [0] == b [0]) ? 0 : ((a [0] < b [0]) ? -1 : 1));
 }
 function STORE_RESET () {
@@ -261,7 +260,7 @@ function runner_execute () {
 function runner_info () {
   return [
     runner_suspended () ? "suspended" : "operating",
-    "sta/com/abo/can/sus: " + [ "started", "completed", "aborted", "cancelled", "suspended" ].map (function (v) { return store_sum ("runner", v) } ).join ("/"),
+    "sta/com/abo/can/sus: " + [ "started", "completed", "aborted", "cancelled", "suspended" ].map (v => store_sum ("runner", v)).join ("/"),
   ].join (", ");
 }
 function runner_expired () {

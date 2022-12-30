@@ -4,63 +4,91 @@
 
 function system_debug () {
   Logger.log (__system_diagnostics ());
-  Logger.log (runner_info ());
   __system_check ();
 }
 
 function system_report () {
-  return { "system": __system_diagnostics (), "runner": runner_info () };
+  return { "system": __system_diagnostics () };
 }
 
-function system_setup () {
-  var setup_functions = util_functions_find (v => (v != "system_setup" && v.endsWith ("_setup")));
-  setup_functions.forEach (util_functions_call);
-  var m = "setup - " + setup_functions.map (v => v.replace ("_setup", "")).join (", ");
-  log ("system", m); Logger.log ("system: " + m);
+function system_setup (user, info) {
+  var setup_functions = util_function_find (v => (v != "system_setup" && v.endsWith ("_setup")));
+  setup_functions.forEach (util_function_call);
+  var m = "opened by " + (util_is_nullOrZero (user) ? "(unknown)" : user) + " with " + (util_is_nullOrZero (info) ? "(unknown)" : info) ;
+  log ("system", m + " [" + ScriptApp.getScriptId () + "]"); system_report_info ("system", m);
+  log ("system", "setup: " + setup_functions.map (v => v.replace ("_setup", "")).join (", "));
 
-  function __timerSetup (f, n, a, b, c) { if (f (n, a, b, c) == true) log ("system", "Timer for '" + n + "' did not exist, will be created"); }
-  __timerSetup (timer_createMinutes, "runEveryMinute", 1);
-  __timerSetup (timer_createHours, "runEveryHour", 1);
-  __timerSetup (timer_createDaily, "runEveryDayAt5am", 5, 0);
-  __timerSetup (timer_createWeekly, "runEveryWeekOnSaturday", ScriptApp.WeekDay.SATURDAY, 6);
-  __timerSetup (timer_createWeekly, "runEveryWeekOnTuesday", ScriptApp.WeekDay.TUESDAY, 6);
-  __timerSetup (timer_createMonthly, "runEveryMonth", 3, 6);
-  __timerSetup (timer_createMinutes, "__system_runner", 1);
-  __timerSetup (timer_createHours, "__system_check", 1);
+  function __timer_setup (f, n, a, b, c) { if (f (n, a, b, c) == true) log ("system", "Timer for '" + n + "' did not exist, will be created"); }
+  __timer_setup (timer_createMinutes, "runEveryMinute", 1);
+  __timer_setup (timer_createHours, "runEveryHour", 1);
+  __timer_setup (timer_createDaily, "runEveryDayAt5am", 5, 0);
+  __timer_setup (timer_createWeekly, "runEveryWeekOnSaturday", ScriptApp.WeekDay.SATURDAY, 6);
+  __timer_setup (timer_createWeekly, "runEveryWeekOnTuesday", ScriptApp.WeekDay.TUESDAY, 6);
+  __timer_setup (timer_createMonthly, "runEveryMonth", 3, 6);
+  __timer_setup (timer_createMinutes, "__system_runner", 1);
+  __timer_setup (timer_createHours, "__system_check", 1);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
+// XXX refactor
 
 function __system_diagnostics () {
-  return __system_modules_names.map (v => 
-    v + ": " + (this [v + "_cnt"] ()) + (this [v + "_len"] != undefined ? "/" + (this [v + "_len"]()) : "") + (this [v + "_str"] != undefined ? "/" + (this [v + "_str"]()) : "")
+  return __system_modules_names.map (v =>
+    v + ": " + util_function_call (v + "_cnt") + (util_function_exists (v + "_len") ? "/" + util_function_call (v + "_len") : "")
+                + (util_function_exists (v + "_str") ? "/" + util_function_call (v + "_str") : "")
   ).join (", ");
 }
-var __system_modules_names = [ "queue", "store", "timer", "log" ];
 
 var WARNING_SIZE_STORAGE  = (512*1024)*(2/3);   // 2/3 of property storage size
 var WARNING_SIZE_CONNECT  = 25*1000;            // 25K per day, can go 100K on enterprise
 var WARNING_SIZE_LOG      = 75*1000;            // too many log lines
 var WARNING_SIZE_TIMER    = 15;                 // 20 is system limit
 
-var __system_limits = {
-  storage: { limit: Math.floor (WARNING_SIZE_STORAGE), size: function () { return queue_len () + store_len (); } },
-  connect: { limit: WARNING_SIZE_CONNECT, size: function () { var d = util_date_str_yyyymmdd (); return store_get ("url", util_str_substr (d, 0, 7), util_str_substr (d, 8, 2)) * 1.0; } },
-  log: { limit: WARNING_SIZE_LOG, size: log_cnt },
-  timer: { limit: WARNING_SIZE_TIMER, size: timer_cnt },
-};
+var __system_modules_names = [ "queue", "store", "timer", "log", "runner" ];
+function __system_modules () { return {
+    storage: { limit: Math.floor (WARNING_SIZE_STORAGE), size: () => queue_len () + store_len () },
+    connect: { limit: WARNING_SIZE_CONNECT, size: () => { var d = util_date_str_yyyymmdd (); return store_get ("url", util_str_substr (d, 0, 7), util_str_substr (d, 8, 2)) * 1.0; } },
+    log: { limit: WARNING_SIZE_LOG, size: log_cnt },
+    timer: { limit: WARNING_SIZE_TIMER, size: timer_cnt },
+  };
+}
 
 function __system_check () {
-  Object.entries (__system_limits).forEach (([n, d]) => {
+  Object.entries (__system_modules ()).forEach (([n, d]) => {
     var size = d.size (), limit = d.limit; if (size > limit)
-      report_error ("system", "<b>WARNING: " + n + " at '" + size + "', threshold '" + limit + "':</b>" + "<pre>" + __system_diagnostics () + "</pre>");
+      system_report_error ("<b>warning -- " + n + " at '" + size + "', threshold '" + limit + "'</b>", "<pre>" + __system_diagnostics () + "</pre>");
   });
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-// https://github.com/brucemcpherson/rottler
+/*
+
+Server side Google Apps Script is not asynchronous. It doesn't even have a setTimeout function, but it does syntactically support Promises,
+so to make all this work all we have to do is to provide a sleep function (which is synchronous), and tell rottle you're working in synchronous mode
+
+  const ms = Rottle.ms
+  const rot = new Rottle ({
+    period: ms('minute'),
+    rate: 10,
+    delay: ms('seconds', 2),
+    sleep: Utilities.sleep,
+    synch: true
+  })
+
+because Apps Script is synchronous and single threaded you can just do this
+
+  rot.rottle()
+  const result = UrlFetchApp.fetch(url)
+
+or if you prefer
+
+  Utilities.sleep (rot.waitTime())
+  rot.use()
+  const result = UrlFetchApp.fetch(url)
+
+*/
 
 function __url_fetch (u) {
   const __day = util_date_arr_yyyymmdd (), d_i = __day [0] + "-" + __day [1], d_j = (__day [2] < 10) ? "0" + __day [2] : __day [2];
@@ -80,8 +108,11 @@ function __url_fetch (u) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __log_queue = "au", __log_sheet = "#", __log_col_start = "A", __log_col_end = "C", __log_row = 2, __log_size = 35;
+var __log_queue = "zz", __log_sheet = "#", __log_col_start = "A", __log_col_end = "C", __log_row = 4, __log_size = 35, __log_sheet_ref = undefined;
 
+function __log_sheet_load () {
+  if (__log_sheet_ref == undefined) __log_sheet_ref = SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet);
+}
 function __log_queueClear () {
   queue_rst (__log_queue);
 }
@@ -93,20 +124,19 @@ function __log_queueWriter (f) {
   while (cr < queue_get_n (__log_queue, "W")) { var mm = queue_pop_c (__log_queue, cr); cr = queue_set_n (__log_queue, "R", cr); if (!util_is_nullOrZero (mm)) m.push (mm); }
   if (m.length > 0) f (m);
 }
-function __log_queueProcess () {
-  __log_queueWriter (m => util_sheet_rowPushAndHide (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet),
-      __log_row, __log_col_start + __log_row + ":" + __log_col_end + (__log_row + m.length - 1), __log_size, m.reverse ()));
+function __log_queueProcess () { __log_sheet_load ();
+  __log_queueWriter (m => util_sheet_rowPushAndHide (__log_sheet_ref, __log_row, __log_col_start + __log_row + ":" + __log_col_end + (__log_row + m.length - 1), __log_size, m.reverse ()));
 }
-function __log_queueTrim (n) {
-  util_sheet_rowPrune (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet), n);
+function __log_queueTrim (n) { __log_sheet_load ();
+  util_sheet_rowPrune (__log_sheet_ref, n);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 var log_suspend = false;
 
-function log_cnt () {
-  return SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet).getLastRow () - 1;
+function log_cnt () { __log_sheet_load ();
+  return __log_sheet_ref.getLastRow () - 1;
 }
 function log_reduce () {
   __log_queueTrim (__log_size);
@@ -121,9 +151,6 @@ function log (x, m) {
   if (Array.isArray (m)) m.forEach (mm => __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), x, mm ]));
   else __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), x, m ]);
 }
-function log_setup () {
-  log_process ();
-}
 function log_str () {
   return (log_suspend ? "suspended" : "operating");
 }
@@ -131,13 +158,13 @@ function log_str () {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __report_name = APPLICATION_USER_TELEGRAM;
+var __system_report_name = APPLICATION_USER_TELEGRAM;
 
-function report_info (t, m) {
-  telegram_messageTransmit (__report_name, "<b>" + APPLICATION_NAME + "\n" + t + "</b>\n" + m);
+function system_report_info (t, m) {
+  telegram_messageTransmit (__system_report_name, "<b>" + APPLICATION_NAME + "\n" + t + "</b>\n" + m);
 }
-function report_error (t, m) {
-  telegram_messageTransmit (__report_name, "<b>" + APPLICATION_NAME + "\n" + t + "</b>\n" + m);
+function system_report_error (t, m) {
+  telegram_messageTransmit (__system_report_name, "<b>" + APPLICATION_NAME + "\n" + t + "</b>\n" + m);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -179,16 +206,16 @@ var __runner_timeAbort = 7*60;
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function runner_suspend (f, r = undefined) {
-  var ff = store_get ("runner", "state", "suspended") == undefined ? false : true;
+  var ff = store_get ("system", "state", "suspended") == undefined ? false : true;
   if (ff == false && f == true) {
-    store_set (util_date_str_ISO (), "runner", "state", "suspended");
-    var m = "suspended" + (r == undefined ? "" : ": " + r);
-    log ("runner", m); report_info ("runner", m); store_inc ("runner", "suspended", util_date_str_yyyymmdd ());
+    store_set (util_date_str_ISO (), "system", "state", "suspended");
+    var m = "runner, suspended" + (r == undefined ? "" : ": " + r);
+    log ("system", m); system_report_info ("system", m); store_inc ("system", "suspended", util_date_str_yyyymmdd ());
   } else if (ff == true && f == false) {
-    var t = store_get ("runner", "state", "suspended"); if (t != undefined) t = util_str_niceSecsAsDays (((new Date ()).getTime () - (new Date (t)).getTime ()) / 1000);
-    store_clr ("runner", "state", "suspended");
-    var m = Array (); if (r != undefined) m.push (r); if (t != undefined) m.push ("after " + t); m = "resumed" + ((m.length > 0) ? ": " + m.join (", ") : "");
-    log ("runner", m); report_info ("runner", m); store_inc ("runner", "resumed", util_date_str_yyyymmdd ());
+    var t = store_get ("system", "state", "suspended"); if (t != undefined) t = util_str_niceSecsAsDays (util_date_timeSecsToNow ((new Date (t)).getTime ()));
+    store_clr ("system", "state", "suspended");
+    var m = Array (); if (r != undefined) m.push (r); if (t != undefined) m.push ("after " + t); m = "runner, resumed" + ((m.length > 0) ? ": " + m.join (", ") : "");
+    log ("system", m); system_report_info ("system", m); store_inc ("system", "resumed", util_date_str_yyyymmdd ());
   }
 }
 function runner_suspend_wrapper (f, r) {
@@ -203,68 +230,66 @@ function runner_suspend_wrapper (f, r) {
   if (!x) runner_suspend (false);
 }
 function runner_suspended () {
-  return store_get ("runner", "state", "suspended") == undefined ? false : true;
+  return store_get ("system", "state", "suspended") == undefined ? false : true;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __runner_isdone () {
-  var timestart = store_get ("runner", "state", "start-time");
+  var timestart = store_get ("system", "state", "start-time");
   if (timestart == undefined) return true;
-  var duration = (((new Date ()).getTime () - (timestart * 1.0)) / 1000.0);
+  var duration = util_date_timeSecsToNow (timestart);
   if (duration >= __runner_timeExpire) return true;
-  if (store_get ("runner", "state", "suspended") != undefined) return true;
+  if (store_get ("system", "state", "suspended") != undefined) return true;
   return false;
 }
 function __runner_start () {
-  var started = util_lock_wrapper ("Script", util_lock_seconds (30), function () {
-    var timestart = store_get ("runner", "state", "start-time");
-    if (timestart != undefined && (((new Date ()).getTime () - (timestart * 1.0)) / 1000.0) < __runner_timeAbort) return false;
+  var started = util_lock_wrapper ("Script", util_lock_seconds (30), () => {
+    var timestart = store_get ("system", "state", "start-time");
+    if (timestart != undefined && (util_date_timeSecsToNow (timestart) < __runner_timeAbort)) return false;
     if (timestart != undefined) {
-      store_clr ("runner", "state", "start-time");
-      store_inc ("runner", "cancelled", util_date_str_yyyymmdd ());
-      log ("runner", "had been cancelled");
-      report_error ("runner", "had been cancelled");
+      store_clr ("system", "state", "start-time");
+      store_inc ("system", "cancelled", util_date_str_yyyymmdd ());
+      log ("system", "runner, was cancelled");
+      system_report_error ("system", "runner, was cancelled");
     }
-    store_set ((new Date ()).getTime (), "runner", "state", "start-time");
+    store_set ((new Date ()).getTime (), "system", "state", "start-time");
     return true;
   });
   if (started == true)
-    store_inc ("runner", "started", util_date_str_yyyymmdd ());
+    store_inc ("system", "started", util_date_str_yyyymmdd ());
   return started;
 }
 function __runner_end (t, m) {
-  var timestart = store_get ("runner", "state", "start-time"), duration = 0;
+  var timestart = store_get ("system", "state", "start-time"), duration = 0;
   if (timestart != undefined) {
-    store_clr ("runner", "state", "start-time");
-    duration = (((new Date ()).getTime () - (timestart * 1.0)) / 1000.0);
+    store_clr ("system", "state", "start-time");
+    duration = util_date_timeSecsToNow (timestart);
   }
-  log ("runner", t + ", at " + duration + " seconds (" + util_str_niceSecsAsDays (duration) + ")" + (m ? ", " + m : ""));
-  store_inc ("runner", t, util_date_str_yyyymmdd ());
+  log ("system", "runner, " + t + ": at " + duration + " seconds (" + util_str_niceSecsAsDays (duration) + ")" + (m ? ", " + m : ""));
+  store_inc ("system", t, util_date_str_yyyymmdd ());
 }
-function runner_execute () {
+function __runner_execute () {
   try {
     if (!__runner_start ())
       return false;
-    this [__runner_function] (runner_expired);
-    __runner_end ("completed");
+    var ran = this [__runner_function] (__runner_isdone);
+    __runner_end ("completed", "ran " + ran + (ran == false ? " (no-respawn)" : ""));
+    return ran;
   } catch (e) {
     __runner_end ("aborted", util_str_error (e));
-    report_error ("runner", "aborted: " + e.name + ": " + e.message);
+    system_report_error ("system", "runner, aborted: " + e.name + ": " + e.message);
+    return true;
   }
-  return true;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function runner_info () {
-  return [
-    runner_suspended () ? "suspended" : "operating",
-    "sta/com/abo/can/sus: " + [ "started", "completed", "aborted", "cancelled", "suspended" ].map (v => store_sum ("runner", v)).join ("/"),
-  ].join (", ");
+function runner_cnt () {
+  return [ "started", "completed", "aborted", "cancelled", "suspended" ].map (v => store_sum ("system", v)).join ("/");
 }
-function runner_expired () {
-  return __runner_isdone ();
+function runner_str () {
+  return runner_suspended () ? "suspended" : "operating";
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -276,7 +301,7 @@ function __system_respawn (e) {
 }
 function __system_runner () {
   if (runner_suspended () == false)
-    if (runner_execute () == true)
+    if (__runner_execute () == true)
       timer_create ("__system_respawn");
 }
 

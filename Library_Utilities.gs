@@ -19,7 +19,7 @@ function util_tree_push (t, p, v) {
 function util_tree_flat (t, s, n = '') {
   var r = Array ();
   if (n != '') n = n + s;
-  for (var i in t) 
+  for (var i in t)
     if (i != "_v")
       r.push ({ n: n + i, v: t [i]._v }), r = r.concat (util_tree_flat (t [i], s, n + i));
   return r;
@@ -27,11 +27,18 @@ function util_tree_flat (t, s, n = '') {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_functions_find (f) {
+function util_assert (a) {
+  if (!a) throw "assert failed";
+}
+
+function util_function_find (f) {
   return Object.keys (this).filter (v => f (v));
 }
-function util_functions_call (f, a, b, c, d, e) {
+function util_function_call (f, a, b, c, d, e) {
   return this [f] (a, b, c, d, e);
+}
+function util_function_exists (f) {
+  return (f == undefined || f == '' || this [f] == undefined) ? false : true;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -63,16 +70,28 @@ function util_date_str_ISO (t) {
 function util_date_diffDays (a, b) {
   return (typeof a == 'string') ? ((new Date (b)).getTime () - (new Date (a)).getTime ()) / 1000 / 86400 : ((b - a) / 1000 / 86400);
 }
+function util_date_diffSecs (a, b) {
+  if (typeof a == 'string') return ((new Date (b)).getTime () - (new Date (a)).getTime ()) / 1000.0; else return ((b - a) / 1000.0);
+}
+function util_date_timeSecsToNow (t) {
+  return (((new Date ()).getTime () - (t * 1.0)) / 1000.0);
+}
+function util_date_timeSecs () {
+  return ((new Date ()).getTime () / 1000.0);
+}
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
+function util_shuffle (a) {
+  for (var i = a.length - 1; i > 0; i--) { const j = Math.floor (Math.random () * (i + 1)); [ a [i], a [j] ] = [ a [j], a [i] ]; }; return a;
+}
 function util_merge (a, b) {
   return Array.isArray (b) ? b.reduce (util_merge, a) : Object.assign (a, b);
 }
 function util_push (a, b) {
   if (a == undefined) a = new Array (); a.push (b); return a;
 }
-function util_diff (a, b) {
+function util_diff1 (a, b) {
  return (a == undefined) ? undefined : a.filter (v => ! b.includes (v));
 }
 function util_uniq (a) {
@@ -112,7 +131,7 @@ function util_str_isprefix (s, p) {
   return s.toString ().startsWith (p);
 }
 function util_str_niceSecsAsDays (n) {
-  var __l = function (x, a, p) { if (x [1] > a) { x [0] += (Math.floor (x [1] / a) + p); x [1] -= Math.floor (x [1] / a) * a; } return x; }
+  function __l (x, a, p) { if (x [1] > a) { x [0] += (Math.floor (x [1] / a) + p); x [1] -= Math.floor (x [1] / a) * a; } return x; }
   return __l (__l (__l (__l (["", n], 86400, "d"), 3600, "h"), 60, "m"), 1, "s") [0];
 }
 function util_str_niceNum (x) {
@@ -133,7 +152,7 @@ function util_cache_puts (n, s, compressed = true, t = 21600) {
   function __l (s, n) { var l = Math.ceil (s.length / n), c = new Array (l); for (var i = 0, o = 0; i < l; ++i, o += n) c [i] = s.substr (o, n); return c; }
   var c = CacheService.getScriptCache (), b = __l (compressed ? LZString.compressToBase64 (s) : s, (100*1000)-1), k = Array.from ({ length: b.length }, (v, i) => "C/D/" + n + "/" + i);
   c.put ("C/L/" + n, b.length, t);
-  c.putAll (k.reduce (function (p, v, i) { p [v] = b [i]; return p; }, {}), t);
+  c.putAll (k.reduce ((p, v, i) => { p [v] = b [i]; return p; }, {}), t);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -156,7 +175,7 @@ function timer_createHours (f, n) { if (!__t_e (f)) { __t_n (f).everyHours (n).c
 function timer_createDaily (f, h, m) { if (!__t_e (f)) { __t_n (f).everyDays (1).atHour (h).nearMinute ((m == undefined) ? 15 : m).inTimezone ("UTC").create (); return true; } return false; }
 function timer_createWeekly (f, n, h, m) { if (!__t_e (f)) { __t_n (f).onWeekDay (n).atHour (h).nearMinute ((m == undefined) ? 15 : m).inTimezone ("UTC").create (); return true; } return false; }
 function timer_createMonthly (f, n, h, m) { if (!__t_e (f)) { __t_n (f).onMonthDay (n).atHour (h).nearMinute ((m == undefined) ? 15 : m).inTimezone ("UTC").create (); return true; } return false; }
-function timer_delete (id) { ScriptApp.getProjectTriggers().forEach (function (t) { if (t.getUniqueId () == id) ScriptApp.deleteTrigger (t); }); }
+function timer_delete (id) { ScriptApp.getProjectTriggers().forEach (t => { if (t.getUniqueId () == id) ScriptApp.deleteTrigger (t); }); }
 function timer_cnt () { var t = ScriptApp.getProjectTriggers (); return t.length; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -191,8 +210,8 @@ function store_inc (i, j, k, l)   { __s_p.setProperty (__s_n (i, j, k, l), (__s_
 function store_add (v, i, j, k, l){ __s_p.setProperty (__s_n (i, j, k, l), (__s_p.getProperty (__s_n (i, j, k, l)) * 1.0) + (v * 1.0)); }
 function store_app (v, i, j, k, l){ var vv = __s_p.getProperty (__s_n (i, j, k, l)); __s_p.setProperty (__s_n (i, j, k, l), vv == undefined ? v : vv + "," + v); }
 function store_set (v, i, j, k, l){ __s_p.setProperty (__s_n (i, j, k, l), v); }
-function store_sum (i, j, k, l)   { var v = __s_p.getProperties (); return Object.keys (v).reduce (function (z, y) { return __s_z2 (z, y, __s_n (i, j, k, l), v); }, 0); }
-function store_lst (i, j, k, l)   { var v = __s_p.getProperties (); return Object.keys (v).reduce (function (z, y) { return __s_z1 (z, y, __s_n (i, j, k, l), v); }, {}); }
+function store_sum (i, j, k, l)   { var v = __s_p.getProperties (); return Object.keys (v).reduce ((z, y) => __s_z2 (z, y, __s_n (i, j, k, l), v), 0); }
+function store_lst (i, j, k, l)   { var v = __s_p.getProperties (); return Object.keys (v).reduce ((z, y) => __s_z1 (z, y, __s_n (i, j, k, l), v), {}); }
 function store_clr (i, j, k, l)   { return __str_clr (__s_p, __s_n (i, j, k, l)); }
 function store_rst (i, j, k, l)   { return __str_clr (__s_p, __s_n (i, j, k, l)); }
 function store_len ()             { return __stg_len (__s_p, __s_n ()); }
@@ -214,6 +233,9 @@ function util_sheet_abc2col (a) {
 function util_sheet_toggleVisibility (f) {
   SpreadsheetApp.getActiveSpreadsheet ().getSheets ().forEach (s => { if (f (s.getName ())) if (s.isSheetHidden ()) s.showSheet (); else s.hideSheet (); });
 }
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
 function util_sheet_rowHide (s, m) {
   if (!util_is_null (m) && s.getMaxRows () > (m - 1)) s.hideRows (m, s.getMaxRows () + 1 - m);
 }
@@ -223,19 +245,22 @@ function util_sheet_rowPushAndHide (s, r1, r2, m, x) {
 function util_sheet_rowPrune (s, m) {
   if (!util_is_nullOrZero (m) && s.getMaxRows () > (m - 1)) s.deleteRows (m, s.getMaxRows () + 1 - m);
 }
-function util_sheet_appendRows (s, v) {
+function util_sheet_rowAppend (s, v) {
   s.getRange (s.getLastRow () + 1, 1, v.length, v [0].length).setValues (v);
+}
+function util_sheet_rowUpdate (s, v) {
+  v.forEach (vv => s.getRange (vv.row, 1, 1, vv.values [0].length).setValues (vv.values));
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_sheet_headers_load (s, r, cb, ce) {
+function util_sheet_headersLoad (s, r, cb, ce) {
   return s.getRange (cb + r + ":" + (ce ? ce : util_sheet_col2abc (s.getLastColumn ())) + r).getValues () [0];
 }
-function util_sheet_headers_find (h, n) {
+function util_sheet_headersFind (h, n) {
   var i = h.indexOf (n); return (i < 0) ? undefined : i;
 }
-function util_sheet_headers_order (h, c) {
+function util_sheet_headersOrder (h, c) {
   function __l (d) { if (String (d).length == 0) return "";
     if (Array.isArray (d)) d = (d.length == 1) ? d [0] : d.map (v => (typeof v == 'string') ? v : JSON.stringify (util_sort (v))).sort ().join (",");
     else if (typeof d == 'object') d = JSON.stringify (util_sort (d));

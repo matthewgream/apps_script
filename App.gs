@@ -4,90 +4,199 @@
 
 var APPLICATION_NAME = "xxx";
 var APPLICATION_USER_TELEGRAM = "yyy";
-var APPLICATION_RUNNER = "zzz";
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function runLogAndReport (a, x) {
-  var m = Object.keys (x).reduce ((z, v) => z.concat (Array.isArray (x [v]) ? x [v].map (vv => v + " : " + vv) : [v + " : " + x [v]]), Array ());
-  log (a, m); system_report_info (util_str_lower (a) + " -- " + util_date_str_yyyymmddhhmmss (), "<pre>" + m.join ("\n") + "</pre>");
+// zzz
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function APP_URL () {
+  return "xxx";
+  //return ScriptApp.getService().getUrl ();
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function runEveryMonth () {
-  runner_suspend_wrapper (() => {
-    runLogAndReport ("monthly", tasks_runEveryMonth ());
-  }, "monthly");
+function app_setup () {
+  telegram_whitelistInsert (APPLICATION_USER_TELEGRAM);
+
+  __system_timer_setup (timer_createMinutes, "runEveryFifteenMinutes", 15);
+  __system_timer_setup (timer_createMinutes, "runEveryThirtyMinutes", 30);
+  __system_timer_setup (timer_createHours, "runEveryOneHour", 1);
+  __system_timer_setup (timer_createHours, "runEveryFourHours", 4);
+  __system_timer_setup (timer_createHours, "runEverySixHours", 6);
+  __system_timer_setup (timer_createHours, "runEveryTwelveHours", 12);
+  __system_timer_setup (timer_createDaily, "runEveryDayAt5am", 5);
+  __system_timer_setup (timer_createDaily, "runEveryDayAt11pm", 23);
+  __system_timer_setup (timer_createWeekly, "runEveryWeekOnSaturdayAt6am", ScriptApp.WeekDay.SATURDAY, 6);
+  __system_timer_setup (timer_createMonthly, "runEveryMonthOn1stDay", 1, 6);
+  __system_timer_setup (timer_createWeekly, "runOnMarketOpen", ScriptApp.WeekDay.SUNDAY, 20, 45);
+  __system_timer_setup (timer_createWeekly, "runOnMarketClose", ScriptApp.WeekDay.FRIDAY, 20, 45);
 }
-function runEveryWeekOnSaturday () {
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+var RUN_EVERY_MARKET_DAY_PROIR =    "MRKT_DAY_PRIOR";
+var RUN_EVERY_MARKET_DAY_AFTER =    "MRKT_DAY_AFTER";
+var RUN_EVERY_MARKET_WEEK_PRIOR =   "MRKT_WEK_PRIOR";
+var RUN_EVERY_MARKET_WEEK_AFTER =   "MRKT_WEK_AFTER";
+var RUN_EVERY_MARKET_MONTH_BEGIN =  "MRKT_MON_BEGIN";
+
+var RUN_EVERY_MARKET_LOWW =         "MRKT_HRS_LOWW";
+var RUN_EVERY_MARKET_FAST =         "MRKT_HRS_FAST";
+var RUN_EVERY_MARKET_SLOW =         "MRKT_HRS_SLOW";
+
+var RUN_EVERY_MARKET_OPEN =         "MRKT_ONN_OPEN";
+var RUN_EVERY_MARKET_CLOSE =        "MRKT_ONN_CLOS";
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function runEveryFifteenMinutes () {
+  if (MARKET_OPEN_WITH_WINDOW ()) {
+    store_inc ("app", "runner", "market", "fast/M15");
+    run_handlerIterate (RUN_EVERY_MARKET_FAST);
+  }
 }
-function runEveryWeekOnTuesday () {
-  runner_suspend_wrapper (() => {
-    runLogAndReport ("weekly", tasks_runEveryWeek ());
-  }, "weekly");
+function runEveryThirtyMinutes () {
+  if (!MARKET_OPEN_WITH_WINDOW ()) {
+    store_inc ("app", "runner", "market", "fast/M30");
+    run_handlerIterate (RUN_EVERY_MARKET_FAST);
+  }
+}
+
+function runEveryOneHour () {
+  if (MARKET_OPEN_WITH_WINDOW ()) {
+    store_inc ("app", "runner", "market", "slow/H01");
+    run_handlerIterate (RUN_EVERY_MARKET_SLOW);
+  }
+}
+function runEverySixHours () {
+  if (!MARKET_OPEN_WITH_WINDOW ()) {
+    store_inc ("app", "runner", "market", "slow/H06");
+    run_handlerIterate (RUN_EVERY_MARKET_SLOW);
+  }
+}
+
+function runEveryFourHours () {
+  if (MARKET_OPEN_WITH_WINDOW ()) {
+    store_inc ("app", "runner", "market", "loww/H04");
+    run_handlerIterate (RUN_EVERY_MARKET_LOWW);
+  }
+}
+function runEveryTwelveHours () {
+  if (!MARKET_OPEN_WITH_WINDOW ()) {
+    store_inc ("app", "runner", "market", "loww/H12");
+    run_handlerIterate (RUN_EVERY_MARKET_LOWW);
+  }
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function runEveryDayAt11pm () {
+  if (MARKET_OPEN_DAY ()) {
+    store_inc ("app", "runner", "market", "days/H23");
+    system_report_info ("app", "runner", "running tasks, market daily at 11pm");
+    run_handlerIterate (RUN_EVERY_MARKET_DAY_AFTER);
+  }
 }
 function runEveryDayAt5am () {
-  runner_suspend_wrapper (() => {
-    runLogAndReport ("daily", tasks_runEveryDayAt5am ());
-  }, "daily");
-}
-function runEveryHour () { var extended = true;
-  runLogAndReport ("status", util_merge (tasks_report (extended), [ store_report (extended), system_report (extended) ]));
-}
-function runEveryMinute () {
-  log_process ();
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
-
-function runManually_Checks () {
-  runLogAndReport ("manual-checks", tasks_runManually_Checks ());
-}
-function runManually_Reports () { var extended = true;
-  runLogAndReport ("manual-reports", util_merge (tasksort (extended), [ store_report (extended), system_report (extended) ]));
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
-
-function menu_runner_suspend () { runner_suspend (true, "console"); }
-function menu_runner_resume () { runner_suspend (false); }
-function menu_tasks_checks () { runManually_Checks (); }
-function menu_tasks_report () { runManually_Reports (); }
-function menu_queues_toggle () { util_sheet_toggleVisibility (n => (n.length == 4 && n.substring (0, 2) == "__")); }
-function menu_debug () { }
-function menu_display () {
-  SpreadsheetApp.getUi ().createMenu ('[TASKS]')
-    .addItem ('log-refresh', 'log_process')
-    .addItem ('system-suspend', 'menu_runner_suspend')
-    .addItem ('system-resume', 'menu_runner_resume')
-    .addSeparator ()
-    .addItem ('checks-manual', 'menu_tasks_checks')
-    .addItem ('report-manual', 'menu_tasks_report')
-    .addSeparator ()
-    .addItem ('log-reduce', 'log_reduce')
-    .addItem ('debug-queuesToggle', 'menu_queues_toggle')
-    .addItem ('debug-customFunction', 'menu_debug')
-    .addToUi ();
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
-
-function onOpen2 (e) {
-  function __make_user (e) { if (e.user != undefined) e = e.user; else return undefined;
-    return (e.email == undefined) ? (e.nickname == undefined ? undefined : e.nickname) : (e.nickname == undefined ? e.email : e.nickname + " (" + e.email + ")"); }
-  function __make_info (e) {
-    function __make_source (e) { return "'" + e.getName () + "' [" + e.getId () + "]"; }
-    function __make_mode (e) { switch (e) { case ScriptApp.AuthMode.NONE: return "NONE"; case ScriptApp.AuthMode.CUSTOM_FUNCTION: return "CUSTOM_FUNCTION";
-      case ScriptApp.AuthMode.LIMITED: return "LIMITED"; case ScriptApp.AuthMode.FULL: return "FULL"; default: return "UNDEFINED"; } }
-    var s = Array (); if (e.source) s.push ("source: " + __make_source (e.source)); return s.join (", "); if (e.authMode) s.push ("auth: " + __make_mode (e.authMode)); }
-
-  menu_display ();
-  try {
-    system_setup ((e != undefined) ? __make_user (e) : undefined, (e != undefined) ? __make_info (e) : undefined);
-  } catch (e) {
-    log ("app", "onOpen exception: " + util_str_error (e));
+  if (MARKET_OPEN_DAY ()) {
+    store_inc ("app", "runner", "market", "days/H05");
+    system_report_info ("app", "runner", "running tasks, market daily at 5am");
+    run_handlerIterate (RUN_EVERY_MARKET_DAY_PROIR);
   }
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function runEveryWeekOnSaturdayAt6am () {
+  store_inc ("app", "runner", "market", "week/after");
+  system_report_info ("app", "runner", "running tasks, market weekly on saturday at 6am");
+  run_handlerIterate (RUN_EVERY_MARKET_WEEK_AFTER);
+}
+function runEveryWeekOnSundayAt6pm () {
+  store_inc ("app", "runner", "market", "week/prior");
+  system_report_info ("app", "runner", "running tasks, market weekly on sunday at 6pm");
+  run_handlerIterate (RUN_EVERY_MARKET_WEEK_PRIOR);
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function runEveryMonthOn1stDay () {
+  store_inc ("app", "runner", "market", "month/D01");
+  system_report_info ("app", "runner", "running tasks, market monthly on 1st day");
+  run_handlerIterate (RUN_EVERY_MARKET_MONTH_BEGIN);
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function runOnMarketOpen () {
+  store_inc ("app", "runner", "market", "open");
+  system_report_info ("app", "runner", "running tasks, market opening on monday 00:01 Z+3");
+  run_handlerIterate (RUN_EVERY_MARKET_OPEN);
+}
+function runOnMarketClose () {
+  store_inc ("app", "runner", "market", "close");
+  system_report_info ("app", "runner", "running tasks, market closing on friday 23:57 Z+3");
+  run_handlerIterate (RUN_EVERY_MARKET_CLOSE);
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function __app_report_format (type, a, b, details) {
+  return type + " [" + a + "]: " + b + (!util_is_null (details) ? (" --> ('" + util_str_presentable ((util_is_array (details) ? util_str_join (details, ", ") : details), 256) + "')") : ""); }
+function __app_report_telegram (a, b, details) { var mm = "<b>" + APPLICATION_NAME + "\n" + a + (!util_is_null (b) ? (" -- " + b) : "") + "</b>";
+  var md = !util_is_null (details) ? ("\n<pre>" + util_str_escape_html (util_is_array (details) ? util_str_join (details, "\n") : details) + "</pre>") : "";
+  TELEGRAM_SEND (APPLICATION_USER_TELEGRAM, mm + md); }
+function __app_report_info (a, b, details) { 
+  return __app_report_telegram (a.toLowerCase (), b, details); }
+function __app_report_error (a, b, details) { 
+  return __app_report_telegram (a.toUpperCase (), b, details); }
+function __app_message (type, handler, a, b, details) {
+  log (a, b + (!util_is_null (details) ? ("\n" + (util_is_array (details) ? util_str_join (details, "\n") : details)) : "")); 
+  if (handler != undefined) handler (a, b, details); Logger.log (__app_report_format (type, a, b, details)); }
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function app_debug (a, b, details) {
+  return __app_message ("DEBUG", undefined, a, b, details); }
+function app_info (a, b, details) {
+  return __app_message ("INFO", __app_report_info, a, b, details); }
+function app_error (a, b, details) {
+  return __app_message ("ERROR", __app_report_error, a, b, details); }
+function app_error_throw (a, b, details) {
+  app_error (a, b, details); throw __app_report_format ("ERROR", a, b, details); }
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+var system_info = app_info;
+var system_error = app_error;
+var system_debug = app_debug;
+var system_error_throw = function (a, b, details) { throw __app_report_format ("ERROR", a, b, details); }
+var system_report_info = __app_report_info;
+var system_report_error = __app_report_error;
+var system_config = config_data;
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+// xxx
+
+var __APP_SERVICE_PRIVATE_KEY = 'xxx';
+var __APP_SERVICE_CLIENT_EMAIL = 'yyy';
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function config_data () {
+  return {
+    nothing: 'here_yet'
+  };
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

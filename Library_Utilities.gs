@@ -21,8 +21,8 @@ function util_assert (a) {
 function util_function_find (f) {
   return Object.keys (this).filter (v => f (v));
 }
-function util_function_call (f, a, b, c, d, e) {
-  return this [f] (a, b, c, d, e);
+function util_function_call (f, a, b, c, d, e, g, h, i) {
+  return this [f] (a, b, c, d, e, g, h, i);
 }
 function util_function_exists (f) {
   return (f == undefined || f == '' || this [f] == undefined) ? false : true;
@@ -84,8 +84,11 @@ function util_date_str_ISO (t) {
 function util_date_str_yyyymmddhhmmss () {
   return (new Date()).toISOString ().replace ("T", " ").split (".") [0]
 }
-function util_date_str_yyyymmdd () {
-  return (new Date()).toISOString ().split ("T") [0];
+function util_date_str_ISO_to_yyyymmddhhmmss (t) {
+  return t.replace ("T", " ").split (".") [0];
+}
+function util_date_str_yyyymmdd (t) {
+  return (t == undefined ? (new Date()) : (new Date (t))).toISOString ().split ("T") [0];
 }
 function util_date_str_yyyymmdd_plusplus (s) {
   var d = s.substr (8, 2) * 1.0, m = s.substr (5, 2) * 1.0, y = s.substr (0, 4) * 1.0, x = s.substr (4, 1);
@@ -99,6 +102,9 @@ function util_date_str_yyyymmdd_minusminus (s) {
 }
 function util_date_arr_yyyymmdd () {
   var d = new Date (); return [ d.getUTCFullYear (), d.getUTCMonth () + 1, d.getUTCDate () ];
+}
+function util_date_addDays (n) {
+  return new Date (new Date().getTime () + (n*24*60*60*1000));
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -152,15 +158,39 @@ function util_str_isnum (v) {
   if (v == undefined) return false; for (var i = 0; i < v.length; i++) if (!((v [i] >= '0' && v [i] <= '9') || v [i] == '.' || v [i] == '-' || v [i] == '+')) return false; return true;
 }
 function util_str_splitUnquoted (s, d) {
-  var t = [], x = "", iq1 = false, iq2 = false, ib = false;
-  for (const c of s) 
-    if (c === '"') iq1 = !iq1, x += c; 
-    else if (c === '\'') iq2 = !iq2, x += c; 
-    else if (c === "[" || c === "]") ib = !ib, x += c; 
-    else if (c === d && !iq1 && !iq2 && !ib) t.push (x), x = ""; 
+  var t = [], x = "", iq1 = false, iq2 = false, ib = 0;
+  for (var i = 0, l = s.length; i < l; i++) { var c = s [i];
+    if (c === '"' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq1 = !iq1, x += c;
+    else if (c === '\'' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq2 = !iq2, x += c;
+    else if (c === "[") ib ++, x += c;
+    else if (c === "]") ib --, x += c;
+    else if (c === d && !iq1 && !iq2 && ib == 0) t.push (x), x = "";
     else x += c;
+  }
   if (x) t.push (x);
   return t;
+}
+function util_str_includesUnquoted (s, d) {
+  var iq1 = false, iq2 = false, ib = 0;
+  for (var i = 0, l = s.length; i < l; i++) { var c = s [i];
+    if (c === '"' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq1 = !iq1;
+    else if (c === '\'' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq2 = !iq2;
+    else if (c === "[") ib ++;
+    else if (c === "]") ib --;
+    else if (c === d && !iq1 && !iq2 && ib == 0) return true;
+  }
+  return false;
+}
+function util_str_countUnquoted (s, d) {
+  var n = 0, iq1 = false, iq2 = false, ib = 0;
+  for (var i = 0, l = s.length; i < l; i++) { var c = s [i];
+    if (c === '"' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq1 = !iq1;
+    else if (c === '\'' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq2 = !iq2;
+    else if (c === "[") ib ++;
+    else if (c === "]") ib --;
+    else if (c === d && !iq1 && !iq2 && ib == 0) n ++;
+  }
+  return n; // XXX: off by one error
 }
 function util_str_tags_strip (s) {
   return s.replace (/<\/?[^>]+(>|$)/g, "").trim ();
@@ -237,6 +267,9 @@ function util_str_presentable (s, l) {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
+function util_num_formatNN (n) {
+  return n.toFixed (2);
+}
 function util_num_roundNNNNNNNN (n) {
   return Math.round (n * 100000000.0) / 100000000.0;
 }
@@ -249,8 +282,17 @@ function util_num_roundN (n, r) {
 function util_num_avg (d) {
   return d.length == 0 ? 0 : util_num_roundNN (d.reduce ((p, v) => p + (v * 1.0), 0) / d.length);
 }
+function util_num_std (d, a) {
+  return d.length == 0 ? 0 : Math.sqrt (d.reduce ((p, v) => p + ((v - a) ** 2), 0) / d.length);
+}
 function util_num_sum (a) {
   return util_num_roundNN (Object.values (a).reduce ((p, v) => p + (v * 1.0), 0));
+}
+function util_num_min (d, s = undefined) {
+  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || v < p) ? v : p, s);
+}
+function util_num_max (d, s = undefined) {
+  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || v > p) ? v : p, s);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

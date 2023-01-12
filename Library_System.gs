@@ -3,7 +3,6 @@
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function SYSTEM_DEBUG () {
-  //handler_dump ();
   debugLog_Set (true);
   Logger.log (__system_state ());
   __system_checks ();
@@ -36,8 +35,8 @@ var WARNING_SIZE_TIMER    = 18;                 // 20 is system limit
 var __system_modules_names = [ "deployments", "cache", "queue", "store", "timer", "handler", "connect", "runner", "log", "config" ];
 function __system_modules_data () { return {
     storage: { threshold: WARNING_SIZE_STORAGE, limit: 512*1024, size: () => (cache_len () + queue_len () + store_len ()) },
-    connect: { threshold: WARNING_SIZE_CONNECT, limit: 100*1000, size: connect_cnt },    
-    log: { threshold: WARNING_SIZE_LOG, limit: 500*1000, size: log_len, action: 'log_reduce' },
+    connect: { threshold: WARNING_SIZE_CONNECT, limit: 100*1000, size: connect_cnt },
+    log: { threshold: WARNING_SIZE_LOG, limit: 500*1000, size: log_cnt, action: 'log_reduce' },
     timer: { threshold: WARNING_SIZE_TIMER, limit: 20, size: timer_cnt },
   };
 }
@@ -52,7 +51,7 @@ function __system_checks () {
   store_inc ("system", "functions", "checks");
   Object.entries (__system_modules_data ()).forEach (([n, d]) => {
     var size = d.size (), threshold = d.threshold, limit = d.limit; if (size > threshold) {
-      var message = "system " + n + " at " + util_str_niceNum (size) + " above " + util_str_niceNum (threshold) + " limit " + util_str_niceNum (limit);
+      var message = "system " + n + " at " + util_str_niceNum (size) + " above " + util_str_niceNum (threshold) + " (limit " + util_str_niceNum (limit) + ")";
       if (!util_is_null (d.action) && util_function_exists (d.action)) util_function_call (d.action), message += " [action taken: " + d.action + "]";
       system_error ("warning", message, __system_state ());
     }
@@ -136,6 +135,7 @@ var CACHE_TIME_0 = 0;
 var __c_p = PropertiesService.getScriptProperties ();
 function __c_n (k, x)             { return "C" + ((k == undefined) ? "" : (x + "_" + k)); }
 function __c_m (k, s)             { return util_str_isprefix (k, __c_n (s, "V")); }
+function __c_x (k, s)             { return util_str_isprefix (k, __c_n (s, "T")); }
 function __c_t (t)                { return t == undefined ? 0 : (((new Date ()).getTime () - t) / 1000); }
 function __c_v (t, s)             { return (s == undefined || s >= CACHE_TIME_INF || (t != undefined && ((((new Date ()).getTime () - t) / 1000) < s))); }
 function cache_read (k, s)        { return __c_v (__c_p.getProperty (__c_n (k, "T")) * 1.0, s) ? __c_p.getProperty (__c_n (k, "V")) : undefined; }
@@ -149,9 +149,12 @@ function cache_kil ()             { return __stg_rst (__c_p); }
 function cache_cnt ()             { return __stg_cnt (__c_p, __c_n ()); }
 
 function cache_expired (k, s)     { return !__c_v (__c_p.getProperty (__c_n (k, "T")) * 1.0, s); }
+function cache_duration (k, s)    { return __c_t (__c_p.getProperty (__c_n (k, "T")) * 1.0); }
 function cache_timestamp (k)      { var t = __c_p.getProperty (__c_n (k, "T")); return (t == undefined) ? "none" : util_date_str_ISO (t * 1.0); }
-function cache_readWithLZ (k, s)  { var x = cache_read (k, s); if (x != undefined) return LZString.decompressFromBase64 (x); }
-function cache_writeWithLZ (k, v) { if (v != undefined) v = LZString.compressToBase64 (v); cache_write (k, v); }
+function cache_readWithLZ (k, s)  { var x = cache_read (k, s); if (x != undefined) return LZString.decompressFromUTF16 (x); }
+function cache_writeWithLZ (k, v) { if (v != undefined) v = LZString.compressToUTF16 (v); cache_write (k, v); }
+function cache_times (s)          { var v = __c_p.getProperties (), r = Array (); for (var k in v) if (__c_x (k, s)) r.push (v [k]); return r; }
+function cache_time (k)           { var t = __c_p.getProperty (__c_n (k, "T")); return (t == undefined) ? undefined : t * 1.0; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
@@ -189,14 +192,13 @@ function store_cnt ()             { return __stg_cnt (__s_p, __s_n ()); }
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function data_cache_gets (n, compressed = true) {
-  var c = CacheService.getScriptCache (), k = c.get ("C/L/" + n); if (k == null || (k * 1.0) == 0) return undefined;
-  var b = c.getAll (k = Array.from ({ length: k }, (v, i) => "C/D/" + n + "/" + i));
-  return compressed ? LZString.decompressFromBase64 (k.map (x => b [x]).join ("")) : k.map (x => b [x]).join ("");
+  var c = CacheService.getScriptCache (), k = c.get ("C1/L/" + n); if (k == null || (k * 1.0) == 0) return undefined;
+  var b = c.getAll (k = Array.from ({ length: k }, (v, i) => "C1/D/" + n + "/" + i));
+  return compressed ? LZString.decompressFromUTF16 (k.map (x => b [x]).join ("")) : k.map (x => b [x]).join ("");
 }
 function data_cache_puts (n, s, compressed = true, t = 21600) {
-  var c = CacheService.getScriptCache (), b = util_str_chunk (compressed ? LZString.compressToBase64 (s) : s, (100*1000)-1), k = Array.from ({ length: b.length }, (v, i) => "C/D/" + n + "/" + i);
-  c.put ("C/L/" + n, b.length, t);
-  c.putAll (k.reduce ((p, v, i) => { p [v] = b [i]; return p; }, {}), t);
+  var c = CacheService.getScriptCache (), b = util_str_chunk (compressed ? LZString.compressToUTF16 (s) : s, (100*1000)-1), k = Array.from ({ length: b.length }, (v, i) => "C1/D/" + n + "/" + i);
+  c.put ("C1/L/" + n, b.length, t), c.putAll (k.reduce ((p, v, i) => { p [v] = b [i]; return p; }, {}), t);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -224,7 +226,7 @@ function __system_schedule_push (callback) {
     var queue = cache_read (__system_schedule_key ("queue"));
     cache_write (__system_schedule_key ("queue"), util_is_nullOrZero (queue) ? callback : (queue + "," + callback));
     store_inc ("system", "schedule", "push");
-  }); 
+  });
 }
 function __system_schedule_pull () {
   return util_lock_wrapper ("Script", util_lock_seconds (30), () => {
@@ -331,7 +333,7 @@ function run_handlerDebug () { return __run_hItr ((p, v) => { p [0] ++; p [1] +=
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function handler_dump (prefix) { var h = undefined;
+function handler_debug (prefix) { var h = undefined;
   if (prefix == "web") h = web_handlerCollect (); else if (prefix == "run") h = run_handlerCollect (); else return;
   h.map (v => prefix + ":" + v.k + " --> " + util_str_join (v.v, ", ")).sort ().reverse ().forEach (debugLog);
 }
@@ -352,7 +354,7 @@ function __connect_urlResponse (n, u, o, z) {
   var r = UrlFetchApp.fetch (u, o);
   debugLog ("--> " + r.getResponseCode ());
   if (r == undefined || (r.getResponseCode () != 200 && r.getResponseCode () != 201 && r.getResponseCode () != 204))
-    return system_error_throw (n, "HTTP transport error (#" + r.getResponseCode () + "): " + u, 
+    return system_error_throw (n, "HTTP transport error (#" + r.getResponseCode () + "): " + u,
       "HEAD: " + util_str_presentable (JSON.stringify (r.getAllHeaders ()), 128) + ", BODY: " + util_str_presentable (r.getContentText (), 128)); // does not return
   return r;
 }
@@ -405,64 +407,66 @@ function connect_urlCachableResponse (name, url, timeout, forced = false) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __log_sheet_name = "!", __log_sheet_size = 41, __log_sheet_row = 2, __log_sheet_col_beg = "A", __log_sheet_col_end = "D", __log_sheet_ref = undefined;
-var log_suspend = false;
+var __log_queue = "au", __log_sheet = "!", __log_col_beg = "A", __log_col_end = "D",  __log_row = 10, __log_size = 40, __log_sheet_ref = undefined;
 
 function __log_sheet_load () {
-  if (__log_sheet_ref == undefined) __log_sheet_ref = SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet_name);
+  __log_sheet_ref = SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__log_sheet);
 }
-function log_flush () {
-  __log_queueProcess (__log_writeout);
-  store_inc ("system", "logger", "flush");
+function __log_queueClear () {
+  queue_rst (__log_queue);
 }
-function log_process () {
-  util_lock_wrapper ("Document", util_lock_seconds (0), () => { if (!log_suspend) __log_queueProcess (__log_writeout); });
-  store_inc ("system", "logger", "process");
+function __log_queueAppend (m) { // could be an issue with concurrent processes ... should have a lock here
+  if (!util_is_nullOrZero (m)) queue_set_c (__log_queue, queue_pop_n (__log_queue, "W"), m);
 }
-function log (a, b, c) {
-  __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), (a && (b || c)) ? a : "", (b && (a && c)) ? b : "", (c) ? c : ((b) ? b : ((a) ? a : "")) ]);
-  store_inc ("system", "logger", "log");
+function __log_queueObtain () {
+  var cr = queue_get_n (__log_queue, "R"), m = Array ();
+  while (cr < queue_get_n (__log_queue, "W")) { var mm = queue_pop_c (__log_queue, cr); cr = queue_set_n (__log_queue, "R", cr); if (!util_is_nullOrZero (mm)) m.unshift (mm); }
+  return m;
 }
-function log_len () { __log_sheet_load ();
+function __log_queueProcess () { if (__log_sheet_ref == undefined) __log_sheet_load ();
+  var m = __log_queueObtain (); if (util_is_nullOrZero (m)) return 0;
+  util_sheet_rowPushAndHide (__log_sheet_ref, __log_row, __log_col_beg + __log_row + ":" + __log_col_end + ((__log_row - 1) + m.length), __log_size, m);
+  return m.length;
+}
+function __log_queueTrim (n) { if (__log_sheet_ref == undefined) __log_sheet_load ();
+  util_sheet_rowPrune (__log_sheet_ref, n);
+}
+function __log_queuePending () {
+  return queue_get_n (__log_queue, "W") - queue_get_n (__log_queue, "R");
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+var log_suspend = false;
+
+function log_cnt () { if (__log_sheet_ref == undefined) __log_sheet_load ();
   return __log_sheet_ref.getLastRow () - 1;
 }
-function log_cnt () {
-  return __log_pending ();
+function log_len () {
+  return __log_queuePending ();
 }
 function log_str () {
   return (log_suspend ? "suspended" : "operating");
 }
-function log_reduce () { __log_sheet_load ();
-  util_sheet_rowPrune (__log_sheet_ref, __log_sheet_size);
+function log_reduce () {
+  __log_queueTrim (__log_size);
+}
+function log_flush () {
+  __log_queueProcess ();
+}
+function log_process () {
+  var number = (!log_suspend) ? __log_queueProcess () : 0;
+  store_inc ("system", "logger", "process");
+  if (!util_is_null (number) && number > 0) store_add (number, "system", "logger", "volume");
+}
+function log (a, b, c) {
+  if (Array.isArray (b)) b.forEach (bb => __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), (a && (bb || c)) ? a : "", (bb && (a && c)) ? bb : "", (c) ? c : ((bb) ? bb : ((a) ? a : "")) ]));
+  if (Array.isArray (c)) c.forEach (cc => __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), (a && (b || cc)) ? a : "", (b && (a && cc)) ? b : "", (cc) ? cc : ((b) ? b : ((a) ? a : "")) ]));
+  __log_queueAppend ([ util_date_str_yyyymmddhhmmss (), (a && (b || c)) ? a : "", (b && (a && c)) ? b : "", (c) ? c : ((b) ? b : ((a) ? a : "")) ]);
 }
 
 function __system_logger () {
   log_process ();
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
-
-function __log_pending () {
-  return queue_get_n (__log_queueId, "W") - queue_get_n (__log_queueId, "R");
-}
-function __log_writeout (m) { __log_sheet_load ();
-  util_sheet_rowPushAndHide (__log_sheet_ref, __log_sheet_row, __log_sheet_col_beg + __log_sheet_row + ":" + __log_sheet_col_end + (__log_sheet_row + (m.length - 1)),
-    __log_sheet_size, m.reverse ());
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
-
-var __log_queueId = "au";
-function __log_queueClear () {
-  queue_rst (__log_queueId);
-}
-function __log_queueAppend (m) {
-  if (!util_is_nullOrZero (m)) queue_set_c (__log_queueId, queue_pop_n (__log_queueId, "W"), m);
-}
-function __log_queueProcess (f) {
-  var cr = queue_get_n (__log_queueId, "R"), m = Array ();
-  while (cr < queue_get_n (__log_queueId, "W")) { var mm = queue_pop_c (__log_queueId, cr); cr = queue_set_n (__log_queueId, "R", cr); if (!util_is_nullOrZero (mm)) m.push (mm); }
-  if (m.length > 0) f (m);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -588,7 +592,7 @@ function config_exec (c, f, i, s, o) {
 }
 function config_exec2 (c, f, i, s, o) {
   function __match (a, b) { return (util_is_null (a) || (!util_is_null (o) && !util_is_null (o.use_regex)) ? (new RegExp (a)).test (b) : a == b); }
-  return util_array_runnerY (a => Object.keys (c).filter (x => (!util_is_nullOrZero (c [x][i]) && __match (a, x))).reduce ((p, x) => 
+  return util_array_runnerY (a => Object.keys (c).filter (x => (!util_is_nullOrZero (c [x][i]) && __match (a, x))).reduce ((p, x) =>
     { var r = f (x, c [x], i, c [x][i]); if (!util_is_null (r)) p.push (r); return p; }, Array ()), s);
 }
 function config_cnt () {
@@ -635,11 +639,11 @@ function system_deployments () {
   store_inc ("system", "deployments");
   return util_exception_wrapper (() => __system_deployments_execute (__system_serviceScriptAPI ()), e => Array ());
 }
-function __system_execution_data () { // XXX TODO ... need permissions 
+/*function __system_execution_data () { // XXX TODO ... need permissions
   var r = connect_urlJsonResponse ("system",
     __API_URL_BASE_GOOGLESCRIPTAPI_PROJECTS + ScriptApp.getScriptId () + "/metrics?metricsGranularity=DAILY",
     { method: "GET", headers: { "Authorization": "Bearer " + __system_serviceScriptAPI ().getAccessToken () }, contentType: "application/json" });
-}
+}*/
 
 function __system_serviceScriptAPI () {
   return OAuth2.createService ('script_api')

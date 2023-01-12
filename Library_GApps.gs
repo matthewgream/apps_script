@@ -49,8 +49,22 @@ function util_sheet_toggleVisibility (f) { //function toggleSheetsConfig () { re
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_sheet_buildFromArray (s, row_headers, row_data, col_beg, col_end, data_list, data_callback, data_callargg, a, f) {
-  var headers = util_sheet_headersLoad (s, row_headers, col_beg, col_end);
+function util_sheet_contentDelete (sheet, row, col_beg = "A", col_end = "") {
+  if (sheet.getMaxRows () > (row - 1)) {
+    sheet.getRange (col_beg + row + ":" + col_end + sheet.getMaxRows ()).clearContent ();
+    if (sheet.getMaxRows () > row)
+      sheet.deleteRows (row, sheet.getMaxRows () - row);
+  }
+}
+function util_sheet_contentInsert (sheet, row, col, content, format) {
+  var range = sheet.getRange (col + row + ":" + util_sheet_col2abc (util_sheet_abc2col (col) + content [0].length - 1) + (row - 1 + content.length))
+    .clear ()
+    .setValues (content)
+    .setFontFamily ("Consolas").setFontSize (10).setWrapStrategy (SpreadsheetApp.WrapStrategy.CLIP);
+  if (!util_is_null (format)) range.setNumberFormats (Array (content.length).fill (format));
+}
+function util_sheet_buildFromArray (sheet, row_headers, row_data, col_beg, col_end, data_list, data_callback, data_callargg, sheet_archive, format) {
+  var headers = util_sheet_headersLoad (sheet, row_headers, col_beg, col_end);
   var content = Array ();
   var skipped = data_list.reduce ((skipped, data) => {
     skipped = skipped.concat (Object.keys (data).filter (v => ! headers.includes (v)));
@@ -59,23 +73,28 @@ function util_sheet_buildFromArray (s, row_headers, row_data, col_beg, col_end, 
     content.push (util_sheet_headersOrder (headers, data));
     return skipped;
   }, Array ());
-  if (s.getMaxRows () > (row_data - 1)) {
-    s.getRange (col_beg + row_data + ":" + col_end + s.getMaxRows ()).clearContent ();
-    if (s.getMaxRows () > row_data)
-      s.deleteRows (row_data, s.getMaxRows () - row_data);
-  }
-  if (s != undefined) {
-    var sr = s.getRange (col_beg + row_data + ":" + util_sheet_col2abc (util_sheet_abc2col (col_beg) + headers.length - 1) + (row_data - 1 + content.length))
-      .setValues (content)
-      .setFontFamily ("Consolas").setFontSize (10).setWrapStrategy (SpreadsheetApp.WrapStrategy.CLIP);
-    if (f != undefined) sr.setNumberFormats (Array (content.length).fill (f));
-  }
-  if (a != undefined) {
-    var sa = a.getRange (col_beg + (a.getLastRow () + 1) + ":" + util_sheet_col2abc (util_sheet_abc2col (col_beg) + headers.length - 1) + (a.getLastRow () + content.length))
-    .setValues (content)
-    .setFontFamily ("Consolas").setFontSize (10).setWrapStrategy (SpreadsheetApp.WrapStrategy.CLIP);
-    if (f != undefined) sa.setNumberFormats (Array (content.length).fill (f));
-  }
+
+  util_sheet_contentDelete (sheet, row_data, col_beg, col_end);
+  util_sheet_contentInsert (sheet, row_data, col_beg, content, format);
+  if (!util_is_null (sheet_archive)) util_sheet_contentInsert (sheet_archive, (sheet_archive.getLastRow () + 1), col_beg, content, format);
+
+  return { length: data_list.length, skipped: util_uniq (skipped) };
+}
+function util_sheet_buildFromArray2 (sheet, row_headers, row_data, col_beg, col_end, data_list, data_callback, data_callargg, sheet_archive, format) {
+  var headers = util_sheet_headersLoad (!util_is_null (sheet) ? sheet : sheet_archive, row_headers, col_beg, col_end);
+  var content = Array ();
+  var skipped = data_list.reduce ((skipped, data) => {
+    skipped = skipped.concat (Object.keys (data).filter (v => ! headers.includes (v)));
+    if (!util_is_null (data_callback)) data_callback (data, data_callargg);
+    data.timestamp = util_date_str_yyyymmddhhmmss ();
+    content.push (util_sheet_headersOrder (headers, data));
+    return skipped;
+  }, Array ());
+
+  if (!util_is_null (sheet))
+    util_sheet_contentDelete (sheet, row_data, col_beg, col_end), util_sheet_contentInsert (sheet, row_data, col_beg, content, format);
+  if (!util_is_null (sheet_archive)) util_sheet_contentInsert (sheet_archive, (sheet_archive.getLastRow () + 1), col_beg, content, format);
+
   return { length: data_list.length, skipped: util_uniq (skipped) };
 }
 
@@ -144,7 +163,7 @@ function util_sheet_headersOrder (h, c, partial_okay = false) {
 
 function util_lock_wrapper (t, d, f, a) {
   function __l (t) { return (t == "Document") ? LockService.getDocumentLock () : ((t == "Script") ? LockService.getScriptLock () : ((t == "User") ? LockService.getUserLock () : undefined)); }
-  var l = __l (t); if (d == 0 && !l.tryLock (d)) return; else if (d != 0) l.waitLock (d); try { var r = f (a); l.releaseLock (); return r; } catch (e) { l.releaseLock (); throw e; }
+  var l = __l (t); if (d == 0 && !l.tryLock (d)) return undefined; else if (d != 0) l.waitLock (d); try { var r = f (a); l.releaseLock (); return r; } catch (e) { l.releaseLock (); throw e; }
 }
 function util_lock_seconds (x) {
   return x * 1000;
@@ -156,11 +175,14 @@ function util_exception_wrapper (f, g) {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
+/*function util_sheet_formatLoad (s, r_c, c_c, c_e) {
+  return s.getRange (c_c + r_c + ":" + c_e + r_c).getNumberFormats () [0];
+}*/
+function util_sheet_formatSavedLoad (s, r_f, c_c, c_e, is_text = false) {
+  var range = s.getRange (c_c + r_f + ":" + c_e + r_f); return is_text ? range.getValues () [0].map (v => v.split ('"') [1]) : range.getNumberFormats () [0];
+}
 function util_sheet_formatSavedStore (s, r_c, c_c, r_f) {
   s.getRange (c_c + r_f + ":" + r_f).setNumberFormat ("").setValues ([ s.getRange (c_c + r_c + ":" + r_c).getNumberFormats () [0].map (v => '"' + v + '"') ]);
-}
-function util_sheet_formatSavedLoad (s, r_f, c_c) {
-  return s.getRange (c_c + r_f + ":" + r_f).getValues () [0].map (v => v.split ('"') [1]);
 }
 function util_sheet_formatSavedApply (s, r_c, c_c, r_f) {
   s.getRange (c_c + r_c + ":" + s.getLastRow ()).setNumberFormats (Array (s.getLastRow () - (r_c - 1)).fill (s.getRange (c_c + r_f + ":" + r_f).getValues () [0].map (v => v.split ('"') [1])));
@@ -177,13 +199,13 @@ function util_drive_backup (spread) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function util_appscript_make_user (e) { if (e == undefined || e.user == undefined) return undefined; e = e.user;
-  return (e.email == undefined) ? (e.nickname == undefined ? undefined : e.nickname) : (e.nickname == undefined ? e.email : e.nickname + " (" + e.email + ")"); 
+  return (e.email == undefined) ? (e.nickname == undefined ? undefined : e.nickname) : (e.nickname == undefined ? e.email : e.nickname + " (" + e.email + ")");
 }
 function util_appscript_make_info (e) { if (e == undefined) return undefined;
-  function __make_mode (e) { switch (e) { case ScriptApp.AuthMode.NONE: return "NONE"; case ScriptApp.AuthMode.CUSTOM_FUNCTION: return "CUSTOM_FUNCTION"; 
+  function __make_mode (e) { switch (e) { case ScriptApp.AuthMode.NONE: return "NONE"; case ScriptApp.AuthMode.CUSTOM_FUNCTION: return "CUSTOM_FUNCTION";
     case ScriptApp.AuthMode.LIMITED: return "LIMITED"; case ScriptApp.AuthMode.FULL: return "FULL"; default: return "UNDEFINED"; } }
   function __make_source (e) { return "'" + e.getName () + "' [" + e.getId () + "]"; }
-    var s = Array ();  s.push ("script: " + ScriptApp.getScriptId () + (e.authMode ? (", " + __make_mode (e.authMode)) : "")); 
+    var s = Array ();  s.push ("script: " + ScriptApp.getScriptId () + (e.authMode ? (", " + __make_mode (e.authMode)) : ""));
   if (e.source) s.push ("source: " + __make_source (e.source)); return s;
 }
 

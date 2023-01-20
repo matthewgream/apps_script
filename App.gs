@@ -7,6 +7,7 @@ var APPLICATION_USER_TELEGRAM = "yyy";
 var APPLICATION_TELEGRAM_BACKGROUND = true;
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------------------------------------------------------
 
 function app_setup () {
   telegram_whitelistInsert (APPLICATION_USER_TELEGRAM);
@@ -35,9 +36,9 @@ function __app_market_determine_mode () {
   var isitopen = MARKET_OPEN_WITH_WINDOW ();
   var previous = store_get ("app", "runner", "state");
   if ((util_is_nullOrZero (previous) || previous != "market-slow") && isitopen == false)
-    store_set ("market-slow", "app", "runner", "state"), app_info ("market", "moved open to closed, activating market-slow mode (1hr, 4hr, 8hr)");
+    store_set ("market-slow", "app", "runner", "state"), app_info ("market", "moved open to closed", "activating market-slow mode (1hr, 4hr, 8hr)");
   else if ((util_is_nullOrZero (previous) || previous != "market-fast") && isitopen == true)
-    store_set ("market-fast", "app", "runner", "state"), app_info ("market", "moved closed to open, activating market-fast mode (15m, 1hr, 4hr)");
+    store_set ("market-fast", "app", "runner", "state"), app_info ("market", "moved closed to open", "activating market-fast mode (15m, 1hr, 4hr)");
   return isitopen;
 }
 
@@ -71,7 +72,7 @@ function __app_market_runner_periodic (t) {
     "open":         [ () => true,             , RUN_EVERY_MARKET_OPEN,        "opening on monday 00:01 Z+3"  ],
     "close":        [ () => true,             , RUN_EVERY_MARKET_CLOSE,       "closing on friday 23:57 Z+3"  ]
   };
-  var config = __config [t]; if (!util_is_null (config) && config [0] () == true) system_report_info ("app", "runner", "running tasks, market " + config [2]),
+  var config = __config [t]; if (!util_is_null (config) && config [0] () == true) app_info ("app", "running tasks, market " + config [2]),
     store_inc ("app", "runner", "market", t), run_handlerIterate (config [1]);
 }
 
@@ -101,49 +102,71 @@ function __app_market_runner_setup () {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function __app_report_format (type, a, b, details) {
-  return type + " [" + a + "]: " + b + (!util_is_null (details) ? (" --> ('" + util_str_presentable ((util_is_array (details) ? util_str_join (details, ", ") : details), 256) + "')") : ""); }
-function __app_report_telegram (a, b, details) { var mm = "<b>" + APPLICATION_NAME + "\n" + util_str_escape_html (a) + (!util_is_null (b) ? (" -- " + util_str_escape_html (b)) : "") + "</b>";
+function __app_report_format (type, label, title, message, details) {
+  return type + " [" + label + "]: " + title + (!util_is_null (message) ? (" -- " + message) : "") + (!util_is_null (details) ? (" --> ('" + util_str_presentable ((util_is_array (details) ? util_str_join (details, ", ") : details), 256) + "')") : ""); }
+function __app_report_telegram (label, title, message, details) {
+  label = util_str_escape_html (label), title = (!util_is_null (title) ? (" :: " + util_str_escape_html (title)) : ""),
+    message = (!util_is_null (message) ? ("\n" + util_str_escape_html (message)) : "");
+  var mm = "<b>" + APPLICATION_NAME + " -- " + label + title + message + "</b>";
   var md = !util_is_null (details) ? ("\n<pre>" + util_str_escape_html (util_is_array (details) ? util_str_join (details, "\n") : details) + "</pre>") : "";
   if (APPLICATION_TELEGRAM_BACKGROUND) TELEGRAM_SEND_BACKGROUND (APPLICATION_USER_TELEGRAM, mm + md); else TELEGRAM_SEND (APPLICATION_USER_TELEGRAM, mm + md); }
-function __app_report_info (a, b, details) {
-  return __app_report_telegram (a.toLowerCase (), b, details); }
-function __app_report_error (a, b, details) {
-  return __app_report_telegram (a.toUpperCase (), b, details); }
-function __app_message (type, handler, a, b, details) {
-  log (a, b + (!util_is_null (details) ? ("\n" + (util_is_array (details) ? util_str_join (details, "\n") : details)) : ""));
-  if (handler != undefined) handler (a, b, details); Logger.log (__app_report_format (type, a, b, details)); }
+function __app_report_info (label, title, message, details) {
+  return __app_report_telegram (label.toLowerCase (), title.toLowerCase (), message, details); }
+function __app_report_error (label, title, message, details) {
+  return __app_report_telegram (label.toUpperCase (), title.toUpperCase (), message, details); }
+function __app_message (type, handler, label, title, message, details) {
+  log (label, title + (!util_is_null (message) ? (" -- " + message) : "") + (!util_is_null (details) ? ("\n" + (util_is_array (details) ? util_str_join (details, "\n") : details)) : ""));
+  if (!util_is_null (handler)) handler (label, title, message, details); Logger.log (__app_report_format (type, label, title, message, details)); }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function app_debug (a, b, details) {
-  return __app_message ("DEBUG", undefined, a, b, details); }
-function app_info (a, b, details) {
-  return __app_message ("INFO", __app_report_info, a, b, details); }
-function app_error (a, b, details) {
-  return __app_message ("ERROR", __app_report_error, a, b, details); }
-function app_error_throw (a, b, details) {
-  app_error (a, b, details); throw __app_report_format ("ERROR", a, b, details); }
+function app_debug (label, title, message, details) {
+  return __app_message ("DEBUG", undefined, label, title, message, details); }
+function app_info (label, title, message, details) {
+  return __app_message ("INFO", __app_report_info, label, title, message, details); }
+function app_error (label, title, message, details) {
+  return __app_message ("ERROR", __app_report_error, label, title, message, details); }
+function app_error_throw (label, title, message, details) {
+  app_error (label, title, message, details); throw __app_report_format ("ERROR", label, title, message, details); }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 var system_info = app_info;
 var system_error = app_error;
 var system_debug = app_debug;
-var system_error_throw = function (a, b, details) { throw __app_report_format ("ERROR", a, b, details); }
-var system_report_info = __app_report_info;
-var system_report_error = __app_report_error;
-var system_config = config_data;
+var system_error_throw = function (label, title, message, details) { throw __app_report_format ("ERROR", label, title, message, details); }
+var system_config = app_config;
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __APP_SERVICE_PRIVATE_KEY = 'XXX';
-var __APP_SERVICE_CLIENT_EMAIL = 'YYY';
+function log (a, b, c) {
+  const d = util_date_strAsyyyymmddhhmmss ();
+  const __arg1 = (a,b,c) => (a && (b || c)) ? a : "", __arg2 = (a,b,c) => (b && (a && c)) ? b : "", __arg3 = (a,b,c) => (c) ? c : (b ? b : (a ? a : ""));
+  if (Array.isArray (b) && Array.isArray (c)) system_error_throw ("log", "dual arrays not supported");
+  else if (Array.isArray (b)) b.forEach (bb => __log_queueAppend ([ d, __arg1 (a, bb, c), __arg2 (a, bb, c), __arg3 (a, bb, c) ]));
+  else if (Array.isArray (c)) c.forEach (cc => __log_queueAppend ([ d, __arg1 (a, b, cc), __arg2 (a, b, cc), __arg3 (a, b, cc) ]));
+  else __log_queueAppend ([ d, __arg1 (a, b, c), __arg2 (a, b, c), __arg3 (a, b, c) ]);
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+var __APP_SERVICE_PRIVATE_KEY = 'xxx';
+var __APP_SERVICE_CLIENT_EMAIL = 'yyy';
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function config_data () {
+function __nordigenHistorySourcesAdapter () {
+  var accounts = NORDIGEN_ACCOUNT_LIST (), sheet = SpreadsheetApp.getActiveSpreadsheet ().getSheetByName ("O"),
+    names = sheet.getRange ("B1:B").getValues ().map (v => v [0]);
+  return sheet.getRange ("O1:O").getValues ().map (v => v [0]).map ((account_id, i) => ({ name: names [i], account: account_id }))
+    .filter (mapping => __nordigen_validAccount (mapping.account) && accounts.includes (mapping.account));
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function app_config () {
   return {
   };
 }

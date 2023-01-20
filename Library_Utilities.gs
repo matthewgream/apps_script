@@ -2,13 +2,11 @@
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function UTIL_SECS_DIFFERENCE (a, b) {
-  return util_date_diffSecs (a, b);
-}
-function UTIL_SECS_STRNICELY (a) {
-  return util_str_niceSecsAsDays (a);
+function structuredClone (x) {
+  return JSON.parse (JSON.stringify (x));
 }
 
+// -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function util_args_check (a, b) {
@@ -49,19 +47,36 @@ function util_tree_flat (t, s, n = '') {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_date_timeSecsToNow (t) {
-  return (((new Date ()).getTime () - (t * 1.0)) / 1000.0);
+function util_date_epoch (t) {
+  return (t == undefined ? (new Date ()) : (new Date (t))).getTime ();
 }
-function util_date_timestamp () {
-  return (new Date ()).getTime ();
+function util_date_epochFromStr (a) { a = a.toString ();
+  return Date.parse ((/[0-9]{2}.[0-9]{2}.[0-9]{4}/.test (a)) ? (a.substr (6, 4) + "-" + a.substr (3, 2) + "-" + a.substr (0, 2)) : a);
 }
-function util_date_toOrigin (x) {
-  if (Array.isArray (x)) return x.map (util_date_toOrigin);
-  return (new Date (x)).getTime ();
+function util_date_epochFromStr2 (t) {
+  return (new Date (t)).getTime ();
 }
-function util_date_fromOrigin (x) {
-  if (Array.isArray (x)) return x.map (util_date_fromOrigin);
-  var y = new Date (); y.setTime (x); return y.toISOString ();
+function util_date_epochToStr_yyyymmddhhmmss (a) {
+  var aa = new Date (); aa.setTime (a); return aa.toISOString ().replace ("T", " ").split (".") [0];
+}
+function util_date_epochToStr_yyyymmdd (a) {
+  var aa = new Date (); aa.setTime (a); return aa.toISOString ().split ("T") [0];
+}
+function util_date_epochToStr_ISO (a) {
+  var aa = new Date (); aa.setTime (a); return aa.toISOString ();
+}
+
+function util_date_epochDiffInSecs (a, b) {
+  return Math.floor (((b == undefined ? (new Date ()).getTime () : b * 1.0) - (a * 1.0)) / 1000.0);
+}
+function util_date_epochInSecs () {
+  return Math.floor ((new Date ()).getTime () / 1000.0);
+}
+function util_date_diffInSecs (a, b) {
+  return Math.floor ((typeof a == 'string' ? ((new Date (b)).getTime () - (new Date (a)).getTime ()) : (b - a)) / 1000.0);
+}
+function util_date_weekOfYear () {
+  return Utilities.formatDate (new Date (), "Z", "w") * 1.0;
 }
 function util_date_dayOfWeek () {
   return Utilities.formatDate (new Date (), "Z", "u") * 1.0;
@@ -69,48 +84,45 @@ function util_date_dayOfWeek () {
 function util_date_hourOfDay () {
   return new Date ().getUTCHours () * 1.0;
 }
-function util_date_weekOfYear () {
-  return Utilities.formatDate (new Date (), "Z", "w") * 1.0;
+function util_date_plusDays (n) {
+  return new Date (new Date().getTime () + (n*24*60*60*1000));
 }
-function util_date_diffSecs (a, b) {
-  if (typeof a == 'string') return ((new Date (b)).getTime () - (new Date (a)).getTime ()) / 1000.0; else return ((b - a) / 1000.0);
+function util_date_plusHours (n) {
+  return new Date (new Date().getTime () + (n*60*60*1000));
 }
-function util_date_diffDays (a, b) {
-  if (typeof a == 'string') return ((new Date (b)).getTime () - (new Date (a)).getTime ()) / 1000 / 86400; else return ((b - a) / 1000 / 86400);
-}
-function util_date_str_ISO (t) {
+function util_date_strAsISO (t) {
   return (t == undefined ? (new Date ()) : (new Date (t))).toISOString ();
 }
-function util_date_str_yyyymmddhhmmss () {
-  return (new Date()).toISOString ().replace ("T", " ").split (".") [0]
+function util_date_strAsyyyymmddhhmmss (t) {
+  return (t == undefined ? (new Date ()) : (new Date (t))).toISOString ().replace ("T", " ").split (".") [0];
 }
-function util_date_str_ISO_to_yyyymmddhhmmss (t) {
-  return t.replace ("T", " ").split (".") [0];
+function util_date_strAsyyyymmdd (t) {
+  return (t == undefined ? (new Date ()) : (new Date (t))).toISOString ().split ("T") [0];
 }
-function util_date_str_yyyymmdd (t) {
-  return (t == undefined ? (new Date()) : (new Date (t))).toISOString ().split ("T") [0];
-}
-function util_date_str_yyyymmdd_plusplus (s) {
+function util_date_strAsyyyymmdd_plusplus (s) {
   var d = s.substr (8, 2) * 1.0, m = s.substr (5, 2) * 1.0, y = s.substr (0, 4) * 1.0, x = s.substr (4, 1);
   return (d == 30 && (m == 9 || m == 4 || m == 6 || m == 11) || d == (((y % 4 == 0) ? 29 : 28)) && (m == 2) || d == 31) ? (m == 12) ?
     (y + 1.0) + x+"01"+x+"01" : (y) + x + ((m + 1.0) < 10.0 ? '0'+(m + 1.0) : (m + 1.0)) + x+"01" : (y) + x+(m < 10.0 ? '0'+m : m) + x + ((d + 1.0) < 10.0 ? '0'+(d + 1.0) : (d + 1.0));
 }
-function util_date_str_yyyymmdd_minusminus (s) {
+function util_date_strAsyyyymmdd_minusminus (s) {
   var d = s.substr (8, 2) * 1.0, m = s.substr (5, 2) * 1.0, y = s.substr (0, 4) * 1.0, x = s.substr (4, 1);
   if (d > 1) d -= 1; else { y = (m > 1) ? y : y - 1; m = (m > 1) ? m - 1 : 12; d = (m != 9 && m != 4 && m != 6 && m != 11) ? ((m == 2) ? ((y % 4 == 0) ? 29 : 28) : 31) : 30; }
   return (y) + x + (m < 10.0 ? '0'+m : m) + x + (d < 10.0 ? '0'+d : d);
 }
-function util_date_arr_yyyymmdd () {
+function util_date_arrAsyyyymmdd () {
   var d = new Date (); return [ d.getUTCFullYear (), d.getUTCMonth () + 1, d.getUTCDate () ];
 }
-function util_date_addDays (n) {
-  return new Date (new Date().getTime () + (n*24*60*60*1000));
+function util_date (t) {
+  var x = (t == undefined ? (new Date ()) : (new Date (t)));
+  return { year: x.getUTCFullYear (), month: x.getUTCMonth (), day: x.getUTCDay (), hours: x.getUTCHours (), minutes: x.getUTCMinutes () };
 }
-
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function util_noop (a) {
   return a;
+}
+function util_is_not (a) {
+  return !a;
 }
 function util_is_null (a) {
   return (a == undefined) ? true : false;
@@ -162,8 +174,7 @@ function util_str_splitUnquoted (s, d) {
   for (var i = 0, l = s.length; i < l; i++) { var c = s [i];
     if (c === '"' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq1 = !iq1, x += c;
     else if (c === '\'' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq2 = !iq2, x += c;
-    else if (c === "[") ib ++, x += c;
-    else if (c === "]") ib --, x += c;
+    else if (c === "[") ib ++, x += c; else if (c === "]") ib --, x += c;
     else if (c === d && !iq1 && !iq2 && ib == 0) t.push (x), x = "";
     else x += c;
   }
@@ -175,8 +186,7 @@ function util_str_includesUnquoted (s, d) {
   for (var i = 0, l = s.length; i < l; i++) { var c = s [i];
     if (c === '"' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq1 = !iq1;
     else if (c === '\'' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq2 = !iq2;
-    else if (c === "[") ib ++;
-    else if (c === "]") ib --;
+    else if (c === "[") ib ++; else if (c === "]") ib --;
     else if (c === d && !iq1 && !iq2 && ib == 0) return true;
   }
   return false;
@@ -186,8 +196,7 @@ function util_str_countUnquoted (s, d) {
   for (var i = 0, l = s.length; i < l; i++) { var c = s [i];
     if (c === '"' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq1 = !iq1;
     else if (c === '\'' && (i == 0 || (i > 0 && s [i - 1] != '\\'))) iq2 = !iq2;
-    else if (c === "[") ib ++;
-    else if (c === "]") ib --;
+    else if (c === "[") ib ++; else if (c === "]") ib --;
     else if (c === d && !iq1 && !iq2 && ib == 0) n ++;
   }
   return n; // XXX: off by one error
@@ -209,9 +218,6 @@ function util_str_splitOrNull (s, d) {
 function util_str_join (a, d) {
   return a.join (d);
 }
-function util_str_joinAndPrefix (a, d, p) {
-  return a.map (v => p + v).join (d);
-}
 function util_str_lower (s) {
   return s.toString ().toLowerCase ();
 }
@@ -230,9 +236,6 @@ function util_str_replace (s, c, d) {
 function util_str_chunk (s, n) {
   var l = Math.ceil (s.length / n), c = new Array (l); for (var i = 0, o = 0; i < l; ++i, o += n) c [i] = s.substr (o, n); return c;
 }
-function util_str_left (s, n) {
-  return s.toString ().substr (0, n);
-}
 function util_str_substr (s, a, b) {
   return (b == undefined) ? s.substr (a) : s.substr (a, b);
 }
@@ -241,6 +244,9 @@ function util_str_substring (s, a, b) {
 }
 function util_str_index (s, c) {
   return s.toString ().indexOf (c);
+}
+function util_str_includes (s, c) {
+  return s.toString ().includes (c);
 }
 function util_str_trim (s) {
   return s.toString ().trim ();
@@ -280,19 +286,19 @@ function util_num_roundN (n, r) {
   return n.toFixed (r) * 1.0;
 }
 function util_num_avg (d) {
-  return d.length == 0 ? 0 : util_num_roundNN (d.reduce ((p, v) => p + (v * 1.0), 0) / d.length);
+  return d.length == 0 ? 0 : util_num_roundNN (d.reduce ((p, v) => p + (v * 1.0), 0) * 1.0 / d.length);
 }
 function util_num_std (d, a) {
-  return d.length == 0 ? 0 : Math.sqrt (d.reduce ((p, v) => p + ((v - a) ** 2), 0) / d.length);
+  return d.length == 0 ? 0 : Math.sqrt (d.reduce ((p, v) => p + (((v * 1.0) - (a * 1.0)) ** 2), 0) / d.length) * 1.0;
 }
 function util_num_sum (a) {
-  return util_num_roundNN (Object.values (a).reduce ((p, v) => p + (v * 1.0), 0));
+  return util_num_roundNN (Object.values (a).reduce ((p, v) => p + (v * 1.0), 0) * 1.0);
 }
 function util_num_min (d, s = undefined) {
-  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || v < p) ? v : p, s);
+  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || (v * 1.0) < p) ? v : p, s) * 1.0;
 }
 function util_num_max (d, s = undefined) {
-  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || v > p) ? v : p, s);
+  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || (v * 1.0) > p) ? v : p, s) * 1.0;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

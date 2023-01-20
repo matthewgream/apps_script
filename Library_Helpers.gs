@@ -20,7 +20,7 @@ function cache_checkany_expired (key, timeout_f) {
 
 function cache_iterator (key, callback_f) {
   Object.values (cache_lst (key)).reduce ((number, value) => { var item = util_str_replace (value.k, key, "");
-    var result = util_exception_wrapper (() => callback_f (item, value.k), e => { return undefined; });
+    var result = util_exception_wrapper (() => callback_f (item, value.k), e => undefined);
     if (!util_is_null (result)) number ++; return number;
   }, 0);
 }

@@ -22,16 +22,17 @@ function __myfxbook_cacheTimeOutlooksFrontEnd () { return CACHE_TIME_12H; }
 function __myfxbook_cacheTimeBackoff () { return CACHE_TIME_1H; }
 function __myfxbook_cacheTimeSession () { return CACHE_TIME_24H; }
 
-function __myfxbook_validEmail (x) { return (!util_is_nullOrZero (x) && (util_str_index (x, "@") >= 0)) ? true : false; }
+function __myfxbook_validEmail (x) { return (!util_is_nullOrZero (x) && (util_str_includes (x, "@"))) ? true : false; }
 function __myfxbook_validPassword (x) { return (!util_is_nullOrZero (x)) ? true : false; }
 function __myfxbook_validPair (x) { return (!util_is_nullOrZero (x) && (x [0] != '#') && (x.length <= 6)) ? true : false; }
 function __myfxbook_validType (x) { return (!util_is_nullOrZero (x) && !util_is_null (__myfxbook_communityOutlookSymbolsDetail [x])) ? true : false; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
+// XXX note is case sensitive, assumes upper case ...
 function MYFXBOOK_OUTLOOK_PAIRTYPE (email, password, pair, type) {
   util_args_check (__myfxbook_validEmail (email) && __myfxbook_validPassword (password));
-  const session = myfxbook_sessionToken (email);
+  var session = myfxbook_sessionToken (email);
   if (util_is_nullOrZero (session)) session = myfxbook_sessionLogin (email, password);
   const outlooks = util_is_nullOrZero (session) ? undefined : myfxbook_communityOutlookData (session);
   return util_array_runnerXY ((pair_, type_) => {
@@ -44,7 +45,7 @@ function MYFXBOOK_OUTLOOK_PAIRTYPE (email, password, pair, type) {
 function MYFXBOOK_OUTLOOK_TIMESTAMP (email) {
   util_args_check (__myfxbook_validEmail (email));
   const session = myfxbook_sessionToken (email);
-  return util_is_nullOrZero (session) ? undefined : myfxbook_communityOutlookTime (session);
+  return !util_is_nullOrZero (session) ? myfxbook_communityOutlookTime (session) : undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -62,7 +63,7 @@ function __myfxbook_requestResponse_Base (url, params) { // XXX YUCK
     return connect_urlXmlResponse (__MYFXB_CLS, __MYFXB_API_URL_BASE + url + ((util_is_null (params) ? "" : "?" + params)), { method: "GET", headers: { 'accept': 'application/xml' } });
   }, (e) => app_error_throw (__MYFXB_CLS, e));
   var v; if (!util_is_nullOrZero (v = r.getAttribute ("error")) && v.getValue () == "true")
-    app_error_throw (__MYFXB_CLS, "__myfxbook_requestResponse_Base: " + util_str_isolateURI (__MYFXB_API_URL_BASE + url), r.getAttribute ("message").getValue ());
+    app_error_throw (__MYFXB_CLS, "__myfxbook_requestResponse_Base", util_str_isolateURI (__MYFXB_API_URL_BASE + url), r.getAttribute ("message").getValue ());
   return r;
 }
 function __myfxbook_requestResponseLogin (email, password) {
@@ -112,8 +113,8 @@ function myfxbook_sessionLogout (email) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 var __myfxbook_communityOutlookSymbolsDetail = {
-  "short": [ "shortPercentage", 0.001 ], "shortVol": [ "shortVolume", 1.0 ], "shortVal": [ "avgShortPrice", 1.0 ], "shortPos": [ "shortPositions", 1.0 ],
-  "long": [ "longPercentage", 0.001 ], "longVol": [ "longVolume", 1.0 ], "longVal": [ "avgLongPrice", 1.0 ], "longPos": [ "longPositions", 1.0 ]
+  "short": [ "shortPercentage", 0.01 ], "shortVol": [ "shortVolume", 1.0 ], "shortVal": [ "avgShortPrice", 1.0 ], "shortPos": [ "shortPositions", 1.0 ],
+  "long": [ "longPercentage", 0.01 ], "longVol": [ "longVolume", 1.0 ], "longVal": [ "avgLongPrice", 1.0 ], "longPos": [ "longPositions", 1.0 ]
 };
 
 function __myfxbook_communityOutlookSymbols (q) {
@@ -142,12 +143,11 @@ function __myfxbook_communityOutlookUpdate (session, origin = "foreground") {
 
 function myfxbook_communityOutlookTime (session) {
   var time = cache_time (__myfxbook_cacheKey ("CO", session));
-  if (util_is_null (time)) return undefined;
-  return util_date_epochToStr_yyyymmddhhmmss (time);
+  return !util_is_null (time) ? util_date_epochToStr_yyyymmddhhmmss (time) : undefined
 }
 function myfxbook_communityOutlookData (session) {
   var result = cache_readWithLZ (__myfxbook_cacheKey ("CO", session), __myfxbook_cacheTimeOutlooksFrontEnd ());
-  return (!util_is_null (result)) ? JSON.parse (result) : __myfxbook_communityOutlookUpdate (session);
+  return !util_is_null (result) ? JSON.parse (result) : __myfxbook_communityOutlookUpdate (session);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

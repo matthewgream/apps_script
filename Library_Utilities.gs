@@ -2,9 +2,11 @@
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function structuredClone (x) {
-  return JSON.parse (JSON.stringify (x));
-}
+var __DEEPCOPY = (x) => JSON.parse (JSON.stringify (x));
+var __SINGULAR = (Class, i = undefined) => { var __undefined = undefined;
+  if (i == undefined) return Class._instance; if (Class._instance == undefined) return (Class._instance = i); __undefined ("forced: __SINGULAR"); };
+var __FINALIZE = (f = undefined) => { if (f == undefined) return __FINALIZE._functions == undefined ? 0 : __FINALIZE._functions.map (f => f ()).length;
+  if (__FINALIZE._functions == undefined) __FINALIZE._functions = new Array (); if (!__FINALIZE._functions.includes (f)) __FINALIZE._functions.push (f); };
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -29,12 +31,14 @@ function util_function_exists (f) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function util_tree_push (t, p, v) {
+  var t_ = t;
   for (var i = 0; i < p.length; i++) {
     var pp = p [i];
     if (!t [pp]) t [pp] = { _v: util_str_isnum (v) ? (v * 1.0) : v };
     else t [pp]._v += (!util_str_isnum (t [pp]._v)) ? ("," + v) : (util_str_isnum (v) ? (v * 1.0) : 1.0);
     t = t [pp];
   }
+  return t_;
 }
 function util_tree_flat (t, s, n = '') {
   var r = Array ();
@@ -46,6 +50,14 @@ function util_tree_flat (t, s, n = '') {
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
+
+function util_date_durationToSecs (a) {
+  switch (a.toLowerCase ()) { case "yesterday": return 60*60*24; }
+  var x; return (x = a.toLowerCase ().match ("([0-9]+)(s|m|h|d|w)?")) != undefined ? x [1] * (x.length > 2 ? { 's': 1, 'm': 60, 'h': 60*60, 'd': 60*60*24, 'w': 60*60*24*7 } [x [2]] : 1) : a;
+}
+function util_date_periodicityToSecs (a) {
+  var x; return (x = { 'weekly': 60*60*24*7, 'daily': 60*60*24, 'hourly': 60*60 } [a.toLowerCase ()]) != undefined ? x : util_date_durationToSecs (a);
+}
 
 function util_date_epoch (t) {
   return (t == undefined ? (new Date ()) : (new Date (t))).getTime ();
@@ -65,7 +77,6 @@ function util_date_epochToStr_yyyymmdd (a) {
 function util_date_epochToStr_ISO (a) {
   var aa = new Date (); aa.setTime (a); return aa.toISOString ();
 }
-
 function util_date_epochDiffInSecs (a, b) {
   return Math.floor (((b == undefined ? (new Date ()).getTime () : b * 1.0) - (a * 1.0)) / 1000.0);
 }
@@ -84,17 +95,23 @@ function util_date_dayOfWeek () {
 function util_date_hourOfDay () {
   return new Date ().getUTCHours () * 1.0;
 }
-function util_date_plusDays (n) {
+function util_date_shiftDays (n) {
   return new Date (new Date().getTime () + (n*24*60*60*1000));
 }
-function util_date_plusHours (n) {
+function util_date_shiftHours (n) {
   return new Date (new Date().getTime () + (n*60*60*1000));
+}
+function util_date_shiftMins (n) {
+  return new Date (new Date().getTime () + (n*60*1000));
 }
 function util_date_strAsISO (t) {
   return (t == undefined ? (new Date ()) : (new Date (t))).toISOString ();
 }
 function util_date_strAsyyyymmddhhmmss (t) {
   return (t == undefined ? (new Date ()) : (new Date (t))).toISOString ().replace ("T", " ").split (".") [0];
+}
+function util_date_strAshhmmss (t) {
+  return util_str_substr (util_date_strAsyyyymmddhhmmss (t), 4+1+2+1+2+1);
 }
 function util_date_strAsyyyymmdd (t) {
   return (t == undefined ? (new Date ()) : (new Date (t))).toISOString ().split ("T") [0];
@@ -163,9 +180,35 @@ function util_sort (a) {
 function util_merge (a, b) {
   return Array.isArray (b) ? b.reduce (util_merge, a) : Object.keys (b).reduce ((aa, k) => { aa [k] = b [k]; return aa; }, a);
 }
+function util_assign (a, i, b) {
+  if (a == undefined) a = {}; a [i] = b; return a;
+}
+function util_lower_obj (x) {
+  Object.keys (x).filter (x_ => x_.toLowerCase () != x_).forEach (x_ => { x [x_.toLowerCase ()] = x [x_]; delete x [x_]; }); return x;
+}
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
+function util_str_safevaluetostr (x) {
+  function __check (x) {
+    if (x == undefined) return false;
+    if ((Array.isArray (x) || typeof x == 'string') && x.length == 0) return false;
+    if (typeof x == 'object' && Object.keys (x).length == 0) return false;
+    return true;
+  }
+  function __encode (x) {
+    if (Array.isArray (x)) return x.join (",");
+    if (typeof x == 'object') return JSON.stringify (x);
+    return x;
+  }
+  return __check (x) ? ("[" + __encode (x) + "]") : "";
+}
+function util_str_stripquotes (s) {
+  return (s.length > 0 && (s [0] == '\'' || s [0] == '\"') && s [0] == s [s.length - 1]) ? s.substring (1, s.length - 1) : s;
+}
+function util_str_matchsimplewildcards (s, r) {
+  return (new RegExp ("^" + r.split ("*").map ((x) => x.replace (/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1")).join (".*") + "$")).test (s);
+}
 function util_str_isnum (v) {
   if (v == undefined) return false; for (var i = 0; i < v.length; i++) if (!((v [i] >= '0' && v [i] <= '9') || v [i] == '.' || v [i] == '-' || v [i] == '+')) return false; return true;
 }
@@ -256,16 +299,16 @@ function util_str_isolateURI (s) {
   while (i > 0 && s [i - 1] == '/') i--;
   return (i < s.length) ? s.substr (0, i) : s;
 }
-function util_str_niceNum (x) {
-  return x.toString ().replace (/\B(?=(\d{3})+(?!\d))/g, ",");
+function util_str_niceNum (s) {
+  return s.toString ().replace (/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 function util_str_niceSecsAsDays (n) {
   function __n (x, a, p) { if (x [1] > a) { x [0] += (Math.floor (x [1] / a) + p); x [1] -= Math.floor (x [1] / a) * a; } return x; }
   return __n (__n (__n (__n (["", n], 86400, "d"), 3600, "h"), 60, "m"), 1, "s") [0];
 }
 function util_str_escape_html (s) {
-  const __entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;' };
-  return String (s).replace (/[&<>"'`=\/]/g, ss => __entities [ss]);
+  const __entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;', '/': '&#47;', '=': '&#61;' };
+  return String (s).replace (/[&<>"'`\/=]/g, ss => __entities [ss]);
 }
 function util_str_presentable (s, l) {
   return String (s).replaceAll ('\n', "\\n").replaceAll ('\r', "\\r").substr (0, l) + (s.length > l ? " ...": "")
@@ -273,32 +316,35 @@ function util_str_presentable (s, l) {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_num_formatNN (n) {
+function util_num_fmtNN (n) {
   return n.toFixed (2);
 }
-function util_num_roundNNNNNNNN (n) {
+function util_num_rndNNNNNNNN (n) {
   return Math.round (n * 100000000.0) / 100000000.0;
 }
-function util_num_roundNN (n) {
+function util_num_rndNN (n) {
   return Math.round (n * 100.0) / 100.0;
 }
-function util_num_roundN (n, r) {
+function util_num_rndN (n, r) {
   return n.toFixed (r) * 1.0;
 }
 function util_num_avg (d) {
-  return d.length == 0 ? 0 : util_num_roundNN (d.reduce ((p, v) => p + (v * 1.0), 0) * 1.0 / d.length);
+  return d.length == 0 ? 0 : util_num_rndNN (d.reduce ((p, v) => p + (v * 1.0), 0) * 1.0 / d.length);
 }
 function util_num_std (d, a) {
   return d.length == 0 ? 0 : Math.sqrt (d.reduce ((p, v) => p + (((v * 1.0) - (a * 1.0)) ** 2), 0) / d.length) * 1.0;
 }
 function util_num_sum (a) {
-  return util_num_roundNN (Object.values (a).reduce ((p, v) => p + (v * 1.0), 0) * 1.0);
+  return util_num_rndNN (Object.values (a).reduce ((p, v) => p + (v * 1.0), 0) * 1.0);
 }
 function util_num_min (d, s = undefined) {
   return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || (v * 1.0) < p) ? v : p, s) * 1.0;
 }
 function util_num_max (d, s = undefined) {
   return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || (v * 1.0) > p) ? v : p, s) * 1.0;
+}
+function util_arr_max (d, s = undefined) {
+  return d.length == 0 ? s : d.reduce ((p, v) => (p == undefined || v > p) ? v : p, s);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

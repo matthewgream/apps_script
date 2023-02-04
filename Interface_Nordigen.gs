@@ -12,10 +12,10 @@ function TEST_NORDIGEN () { __TEST_SETUP ();
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __nordigen_cacheKey (a, b) { return "NORD_" + a + "_" + (b != undefined ? b : ""); }
-function __nordigen_cacheTimeBalanceFrontEnd () { return CACHE_TIME_12H; }
-function __nordigen_cacheTimeBalanceBackEnd () { return CACHE_TIME_15M; }
-function __nordigen_cacheTimeInstitutions () { return CACHE_TIME_24H; }
-function __nordigen_cacheTimeAuthorisation () { return CACHE_TIME_28D; }
+function __nordigen_cacheTimeBalanceFrontEnd () { return CACHE.TIME_12H; }
+function __nordigen_cacheTimeBalanceBackEnd () { return CACHE.TIME_15M; }
+function __nordigen_cacheTimeInstitutions () { return CACHE.TIME_24H; }
+function __nordigen_cacheTimeAuthorisation () { return CACHE.TIME_28D; }
 
 function __nordigen_validSecretId (x) { return (!util_is_null (x) && (x.length == (8+1+4+1+4+1+4+1+12)) && /^[a-z0-9]{8}-([a-z0-9]{4}-){3}[a-z0-9]{12}$/.test (x)) ? true : false; }
 function __nordigen_validSecretKey (x) { return (!util_is_null (x) && (x.length == 128)) ? true : false; }
@@ -50,8 +50,7 @@ function NORDIGEN_INSTITUTIONS (secret_id, secret_key, country) {
   var institutions = cache_readWithLZ (cache_key, __nordigen_cacheTimeInstitutions ());
   if (!util_is_null (institutions))
     institutions = JSON.parse (institutions);
-  else if (util_is_null (institutions) &&
-      !util_is_null (institutions = (__nordigen_institutions (token, country)).map (v => v.name)))
+  else if (util_is_null (institutions) && !util_is_null (institutions = (__nordigen_institutions (token, country)).map (v => v.name)))
     cache_writeWithLZ (cache_key, JSON.stringify (institutions));
   store_inc (__NORDIGEN_CLS, "institutions", country);
   return institutions;
@@ -59,14 +58,11 @@ function NORDIGEN_INSTITUTIONS (secret_id, secret_key, country) {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function NORDIGEN_TRANSACTIONS (token, account, date_beg, date_end) {
-  function __NORDIGEN_TRANSACTIONS (secret_id, secret_key, account, type, date_beg, date_end) {
-    util_args_check (__nordigen_validSecretId (secret_id) && __nordigen_validSecretKey (secret_key) && __nordigen_validAccount (account) && __nordigen_validTransactionType (type)
-        && (util_is_nullOrZero (date_beg) || __nordigen_validDate (date_beg)) && (util_is_nullOrZero (date_end) || __nordigen_validDate (date_end)));
-    store_inc (__NORDIGEN_CLS, "transactions", account);
-    return nordigen_accountTransactions (__nordigen_access_token (secret_id, secret_key), account, type, date_beg, date_end);
-  }
-  return __NORDIGEN_TRANSACTIONS (token [0], token [1], account, "booked", date_beg, date_end);
+function NORDIGEN_TRANSACTIONS (secret_id, secret_key, account, type, date_beg, date_end) {
+  util_args_check (__nordigen_validSecretId (secret_id) && __nordigen_validSecretKey (secret_key) && __nordigen_validAccount (account) && __nordigen_validTransactionType (type)
+      && (util_is_nullOrZero (date_beg) || __nordigen_validDate (date_beg)) && (util_is_nullOrZero (date_end) || __nordigen_validDate (date_end)));
+  store_inc (__NORDIGEN_CLS, "transactions", account);
+  return nordigen_accountTransactions (__nordigen_access_token (secret_id, secret_key), account, type, date_beg, date_end);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -77,26 +73,24 @@ function NORDIGEN_BALANCE (secret_id, secret_key, account, currency) {
   store_inc (__NORDIGEN_CLS, "balance", account);
   return (!util_is_null (balance) ? balance : __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account, currency)) * 1.0;
 }
-  function __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account, currency, origin = "foreground") {
-    var balance; if (!util_is_null (balance = nordigen_accountBalanceWithCurrency (__nordigen_access_token (secret_id, secret_key), account, currency))) {
-      cache_write (__nordigen_cacheKey ("BV", [account, secret_id, secret_key].join ("/")), balance);
-      store_inc (__NORDIGEN_CLS, "update", "balance", origin);
-    }; return balance;
-  }
+function __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account, currency, origin = "foreground") {
+  const balance = nordigen_accountBalanceWithCurrency (__nordigen_access_token (secret_id, secret_key), account, currency); if (!util_is_null (balance)) {
+    cache_write (__nordigen_cacheKey ("BV", [account, secret_id, secret_key].join ("/")), balance);
+    store_inc (__NORDIGEN_CLS, "update", "balance", origin);
+  }; return balance;
+}
 
 function NORDIGEN_BALANCE_TIMESTAMP (secret_id, secret_key, account) {
   util_args_check (__nordigen_validSecretId (secret_id) && __nordigen_validSecretKey (secret_key) && __nordigen_validAccount (account));
-  var time = cache_time (__nordigen_cacheKey ("BV", [account, secret_id, secret_key].join ("/")));
-  if (util_is_null (time)) return undefined;
-  return util_date_epochToStr_yyyymmddhhmmss (time);
+  const time = cache_time (__nordigen_cacheKey ("BV", [account, secret_id, secret_key].join ("/")));
+  return (!util_is_null (time)) ? util_date_epochToStr_yyyymmddhhmmss (time) : undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function NORDIGEN_ACCOUNT_LIST () {
   store_inc (__NORDIGEN_CLS, "list", "accounts");
-  var accounts = Array ();
-  cache_iterator (__nordigen_cacheKey ("BV"), triple => accounts.push (triple.split ("/") [0]));
+  const accounts = Array (); cache_iterator (__nordigen_cacheKey ("BV"), triple => accounts.push (triple.split ("/") [0]));
   return accounts;
 }
 
@@ -159,17 +153,19 @@ function NORDIGEN_ACCOUNT_ID (secret_id, secret_key, account_name, account_count
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __NORD_API_URL_BASE = "https://ob.nordigen.com";
-var __NORD_API_EP_TOKEN = "/api/v2/token/new/";
-var __NORD_API_EP_REQUISITIONS = "/api/v2/requisitions/";
-var __NORD_API_EP_ACCOUNTS = "/api/v2/accounts/";
-var __NORD_API_EP_INSTITUTIONS = "/api/v2/institutions";
-var __NORD_API_URL_REDIRECT = "https://google.com";
+var __NORDIGEN_CFG = {
+  URL_BASE: "https://ob.nordigen.com",
+  EP_TOKEN: "/api/v2/token/new/",
+  EP_REQUISITIONS: "/api/v2/requisitions/",
+  EP_ACCOUNTS: "/api/v2/accounts/",
+  EP_INSTITUTIONS: "/api/v2/institutions",
+  URL_REDIRECT: "https://google.com"
+};
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __nordigen_access_token (secret_id, secret_key) {
-  var token = cache_read (__nordigen_cacheKey ("TO", secret_id), CACHE_TIME_6H);
+  var token = cache_read (__nordigen_cacheKey ("TO", secret_id), CACHE.TIME_6H);
   if (util_is_null (token) && !util_is_null (token = __nordigen_accesstoken (secret_id, secret_key)))
       cache_write (__nordigen_cacheKey ("TO", secret_id), token);
   return token;
@@ -179,40 +175,34 @@ function __nordigen_access_token (secret_id, secret_key) {
 
 function __nordigen_requestResponseToken (secret_id, secret_key) {
   store_inc (__NORDIGEN_CLS, "request", "token");
-  return connect_urlJsonResponse (__NORDIGEN_CLS, __NORD_API_URL_BASE + __NORD_API_EP_TOKEN, {
+  return connect_urlJsonResponse (__NORDIGEN_CLS, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_TOKEN'], {
     method: 'POST', headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
-    payload: JSON.stringify ({ "secret_id": secret_id, "secret_key": secret_key })
-  });
+    payload: JSON.stringify ({ "secret_id": secret_id, "secret_key": secret_key }) });
 }
 
 function __nordigen_requestResponseRequsition (token, institution_id) {
   store_inc (__NORDIGEN_CLS, "request", "requisition", institution_id);
-  return connect_urlJsonResponse (__NORDIGEN_CLS, __NORD_API_URL_BASE + __NORD_API_EP_REQUISITIONS, {
+  return connect_urlJsonResponse (__NORDIGEN_CLS, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_REQUISITIONS'], {
     method: 'POST', headers: { 'accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': "Bearer " + token },
-    payload: JSON.stringify ({ "redirect": __NORD_API_URL_REDIRECT, "institution_id": institution_id})
-  });
+    payload: JSON.stringify ({ "redirect": __NORDIGEN_CFG ['URL_REDIRECT'], "institution_id": institution_id}) });
 }
 
 function __nordigen_requestResponse (token, url) {
   store_inc (__NORDIGEN_CLS, "request", "response", util_str_isolateURI (url));
-  return connect_urlJsonResponse (__NORDIGEN_CLS, url, {
-    method: "GET", headers: { 'accept': 'application/json', 'Authorization': "Bearer " + token }
-  });
+  return connect_urlJsonResponse (__NORDIGEN_CLS, url, { method: "GET", headers: { 'accept': 'application/json', 'Authorization': "Bearer " + token } });
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __nordigen_accesstoken (secret_id, secret_key) {
-  var result = __nordigen_requestResponseToken (secret_id, secret_key);
-  if (util_is_nullOrZero (result) || util_is_nullOrZero (result.access))
-    return undefined;
-  return result.access;
+  const result = __nordigen_requestResponseToken (secret_id, secret_key);
+  return (util_is_nullOrZero (result) || util_is_nullOrZero (result.access)) ? undefined : result.access;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __nordigen_institutions (token, country) {
-  return __nordigen_requestResponse (token, __NORD_API_URL_BASE + __NORD_API_EP_INSTITUTIONS + "?country=" + country);
+  return __nordigen_requestResponse (token, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_INSTITUTIONS'] + "?country=" + country);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -222,16 +212,16 @@ function __nordigen_requisition (token, institution_id) {
 }
 
 function __nordigen_requisitionAccounts (token, institution_id) {
-  var result = __nordigen_requisitionFind (token, institution_id);
+  const result = __nordigen_requisitionFind (token, institution_id);
   if (util_is_nullOrZero (result) || util_is_nullOrZero (result.accounts))
     return undefined;
   return result.accounts.sort (); // linked vs. CR=created
 }
 
 function __nordigen_requisitionFind (token, institution_id) {
-  var url = __NORD_API_URL_BASE + __NORD_API_EP_REQUISITIONS, requisition = undefined;
+  var url = __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_REQUISITIONS'], requisition = undefined;
   while (!util_is_null (url)) {
-    var requisitions = __nordigen_requestResponse (token, url);
+    const requisitions = __nordigen_requestResponse (token, url);
     if (util_is_nullOrZero (requisitions))
       break;
     if (!util_is_nullOrZero (requisition = requisitions.results.find (v => v.status == "LN" && v.institution_id == institution_id))) // linked vs. CR=created
@@ -244,16 +234,16 @@ function __nordigen_requisitionFind (token, institution_id) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __nordigen_accountBalance (token, account_id) {
-  return __nordigen_requestResponse (token, __NORD_API_URL_BASE + __NORD_API_EP_ACCOUNTS + account_id + "/balances/");
+  return __nordigen_requestResponse (token, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_ACCOUNTS'] + account_id + "/balances/");
 }
 
 function nordigen_accountBalanceWithCurrency (token, account_id, currency) {
 //  if (util_is_nullOrZero (currency))
 //    return app_error_throw2 (__NORDIGEN_CLS, "GET_BALANCE: currency not defined"); // does not return
-  var result = __nordigen_accountBalance (token, account_id);
+  const result = __nordigen_accountBalance (token, account_id);
   if (util_is_nullOrZero (result) || util_is_nullOrZero (result.balances))
     return undefined;
-  var balance = result.balances [0]; // hope it's always like that
+  const balance = result.balances [0]; // hope it's always like that
   if (!util_is_nullOrZero (currency) && balance.balanceAmount.currency != currency)
     return app_error_throw (__NORDIGEN_CLS, "NORDIGEN_BALANCE: currency mismatch, got " + balance.balanceAmount.currency + ", expected " + currency); // does not return
   return balance.balanceAmount.amount;
@@ -262,14 +252,14 @@ function nordigen_accountBalanceWithCurrency (token, account_id, currency) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __nordigen_accountTransactions (token, account_id, date_beg, date_end) {
-  var args = Array ();
+  const args = Array ();
   if (!util_is_nullOrZero (date_beg)) args.push ("date_from=" + date_beg);
   if (!util_is_nullOrZero (date_end)) args.push ("date_to=" + util_date_strAsyyyymmdd_minusminus (date_end)); // XXX
-  return __nordigen_requestResponse (token, __NORD_API_URL_BASE + __NORD_API_EP_ACCOUNTS + account_id + "/transactions/" + (args.length > 0 ? "?" + util_str_join (args, "&") : ""));
+  return __nordigen_requestResponse (token, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_ACCOUNTS'] + account_id + "/transactions/" + (args.length > 0 ? "?" + util_str_join (args, "&") : ""));
 }
 
 function nordigen_accountTransactions (token, account_id, type, date_beg, date_end) {
-  var result = __nordigen_accountTransactions (token, account_id, date_beg, date_end);
+  const result = __nordigen_accountTransactions (token, account_id, date_beg, date_end);
   if (util_is_nullOrZero (result) || util_is_nullOrZero (result.transactions))
     return undefined;
   return ((type == "booked") ? result.transactions.booked : ((type == "pending") ? results.transactions.pending : undefined))
@@ -279,19 +269,16 @@ function nordigen_accountTransactions (token, account_id, type, date_beg, date_e
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function __nordigen_refresh_background_process () {
-  cache_iterator_expired (__nordigen_cacheKey ("BV"), __nordigen_cacheTimeBalanceBackEnd, __NORDIGEN_CLS, "accounts", "refresh",
-      triple => { var t = triple.split ("/"); return __NORDIGEN_BALANCE_UPDATE (t [1], t [2], t [0], undefined, "background"); });
+function __nordigen_refresh_details () {
+  const __p = (p, n) => p.split ("/") [n], __t = "background", __d = {
+    "BV": { time: __nordigen_cacheTimeBalanceBackEnd, name: "accounts", func: p => __NORDIGEN_BALANCE_UPDATE (__p (p, 1), __p (p, 2), __p (p, 0), undefined, __t) },
+  }; return __d;
 }
-function __nordigen_refresh_background () {
-  if (cache_checkany_expired (__nordigen_cacheKey ("BV"), __nordigen_cacheTimeBalanceBackEnd))
-    system_schedule ('__nordigen_refresh_background_process');
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
+function __nordigen_refresh_background_process (keys) { cache_table_refresh_background_process (keys, __nordigen_refresh_details (), __nordigen_cacheKey, __NORDIGEN_CLS); }
+function __nordigen_refresh_background () { cache_table_refresh_background (__nordigen_refresh_details (), __nordigen_cacheKey, '__nordigen_refresh_background_process'); }
 
 function nordigen_setup () {
-  run_handlerInsert (RUN_EVERY_MARKET_FAST, '__nordigen_refresh_background');
+  app_run (RUN_EVERY_MARKET.FAST, '__nordigen_refresh_background');
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

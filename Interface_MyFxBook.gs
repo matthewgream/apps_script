@@ -12,20 +12,22 @@ function TEST_MYFXBOOK () { __TEST_SETUP ();
   var values2 = sheet.getRange ("D$4:F$4").getValues ();
   debugLog (values1); debugLog (values2);
   debugLog (MYFXBOOK_OUTLOOK_PAIRTYPE (MYFXBOOK_DEFAULT_EMAIL, MYFXBOOK_DEFAULT_PASSWORD, values1, values2));
+
+  debugLog (MYFXBOOK_OUTLOOK_TIMESTAMP (MYFXBOOK_DEFAULT_EMAIL));
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __myfxbook_cacheKey (a, b) { return "MFXB_" + a + "_" + ((b != undefined) ? b : ""); }
-function __myfxbook_cacheTimeOutlooksBackEnd () { return CACHE_TIME_15M; }
-function __myfxbook_cacheTimeOutlooksFrontEnd () { return CACHE_TIME_12H; }
-function __myfxbook_cacheTimeBackoff () { return CACHE_TIME_1H; }
-function __myfxbook_cacheTimeSession () { return CACHE_TIME_24H; }
+function __myfxbook_cacheTimeOutlooksBackEnd () { return CACHE.TIME_15M; }
+function __myfxbook_cacheTimeOutlooksFrontEnd () { return CACHE.TIME_12H; }
+function __myfxbook_cacheTimeBackoff () { return CACHE.TIME_1H; }
+function __myfxbook_cacheTimeSession () { return CACHE.TIME_24H; }
 
 function __myfxbook_validEmail (x) { return (!util_is_nullOrZero (x) && (util_str_includes (x, "@"))) ? true : false; }
 function __myfxbook_validPassword (x) { return (!util_is_nullOrZero (x)) ? true : false; }
 function __myfxbook_validPair (x) { return (!util_is_nullOrZero (x) && (x [0] != '#') && (x.length <= 6)) ? true : false; }
-function __myfxbook_validType (x) { return (!util_is_nullOrZero (x) && !util_is_null (__myfxbook_communityOutlookSymbolsDetail [x])) ? true : false; }
+function __myfxbook_validType (x) { return (!util_is_nullOrZero (x) && !util_is_null (__myfxbook_communityOutlookSymbolsDetail () [x])) ? true : false; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
@@ -51,24 +53,26 @@ function MYFXBOOK_OUTLOOK_TIMESTAMP (email) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __MYFXB_API_URL_BASE = "https://www.myfxbook.com/api";
-var __MYFXB_API_EP_LOGIN = "/login.xml";
-var __MYFXB_API_EP_LOGOUT = "/logout.xml";
-var __MYFXB_API_EP_COMMUNITYOUTLOOK = "/get-community-outlook.xml";
+var __MYFXB_CFG = {
+  URL_BASE: "https://www.myfxbook.com/api",
+  EP_LOGIN: "/login.xml",
+  EP_LOGOUT: "/logout.xml",
+  EP_COMMUNITYOUTLOOK: "/get-community-outlook.xml"
+}
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __myfxbook_requestResponse_Base (url, params) { // XXX YUCK
-  var r = util_exception_wrapper (() => {
-    return connect_urlXmlResponse (__MYFXB_CLS, __MYFXB_API_URL_BASE + url + ((util_is_null (params) ? "" : "?" + params)), { method: "GET", headers: { 'accept': 'application/xml' } });
-  }, (e) => app_error_throw (__MYFXB_CLS, e));
-  var v; if (!util_is_nullOrZero (v = r.getAttribute ("error")) && v.getValue () == "true")
-    app_error_throw (__MYFXB_CLS, "__myfxbook_requestResponse_Base", util_str_isolateURI (__MYFXB_API_URL_BASE + url), r.getAttribute ("message").getValue ());
-  return r;
+  const result = util_exception_wrapper (() =>
+    connect_urlXmlResponse (__MYFXB_CLS, __MYFXB_CFG ['URL_BASE'] + url + ((util_is_null (params) ? "" : "?" + params)), { method: "GET", headers: { 'accept': 'application/xml' } }),
+    (e) => app_error_throw (__MYFXB_CLS, e));
+  const value = result.getAttribute ("error"); if (!util_is_nullOrZero (value) && value.getValue () == "true")
+    app_error_throw (__MYFXB_CLS, "__myfxbook_requestResponse_Base", util_str_isolateURI (__MYFXB_CFG ['URL_BASE'] + url), result.getAttribute ("message").getValue ());
+  return result;
 }
 function __myfxbook_requestResponseLogin (email, password) {
   store_inc (__MYFXB_CLS, "request", "login", email);
-  return __myfxbook_requestResponse_Base (__MYFXB_API_EP_LOGIN, "email=" + email + "&password=" + password);
+  return __myfxbook_requestResponse_Base (__MYFXB_CFG ['EP_LOGIN'], "email=" + email + "&password=" + password);
 }
 function __myfxbook_requestResponse (url, session, params) {
   store_inc (__MYFXB_CLS, "request", "url", util_str_isolateURI (url));
@@ -86,7 +90,7 @@ function myfxbook_sessionLogin (email, password) {
   if (util_is_nullOrZero (cache_read (__myfxbook_cacheKey ("SB", email), __myfxbook_cacheTimeBackoff ()))) {
     const result = __myfxbook_requestResponseLogin (email, password);
     if (!util_is_nullOrZero (result) && util_str_lower (result.getName ()) == "response") {
-      var session = result.getChildren ().reduce ((p, v) => util_str_lower (v.getName ()) == "session" && !util_is_nullOrZero (v.getText ()) ? v.getText () : p, undefined);
+      const session = result.getChildren ().reduce ((p, v) => util_str_lower (v.getName ()) == "session" && !util_is_nullOrZero (v.getText ()) ? v.getText () : p, undefined);
       if (!util_is_nullOrZero (session)) {
         cache_write (__myfxbook_cacheKey ("SE", email), session);
         store_inc (__MYFXB_CLS, "session", "login");
@@ -105,29 +109,28 @@ function myfxbook_sessionLogout (email) {
   if (!util_is_nullOrZero (session)) {
     cache_del (cache_key);
     store_inc (__MYFXB_CLS, "session", "logout");
-    return __myfxbook_requestResponse (__MYFXB_API_EP_LOGOUT, session);
+    return __myfxbook_requestResponse (__MYFXB_CFG ['EP_LOGOUT'], session);
   }
   return undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var __myfxbook_communityOutlookSymbolsDetail = {
+function __myfxbook_communityOutlookSymbolsDetail () { return {
   "short": [ "shortPercentage", 0.01 ], "shortVol": [ "shortVolume", 1.0 ], "shortVal": [ "avgShortPrice", 1.0 ], "shortPos": [ "shortPositions", 1.0 ],
   "long": [ "longPercentage", 0.01 ], "longVol": [ "longVolume", 1.0 ], "longVal": [ "avgLongPrice", 1.0 ], "longPos": [ "longPositions", 1.0 ]
-};
+}; }
 
-function __myfxbook_communityOutlookSymbols (q) {
-  return q.reduce ((p, v) => { p [v.getChild ("name").getText ()] =
-      Object.entries (__myfxbook_communityOutlookSymbolsDetail).reduce ((pp, ee) => { pp [ee [0]] = v.getChild (ee [1][0]).getText () * ee [1][1]; return pp; }, {});
-    return p;
-  }, {});
+function __myfxbook_communityOutlookSymbols (response) {
+  return response.reduce ((symbols, values) => util_assign (symbols, values.getChild ("name").getText (),
+      Object.entries (__myfxbook_communityOutlookSymbolsDetail ()).reduce ((attributes, [attribute, value]) =>
+        util_assign (attributes, attribute, values.getChild (value [0]).getText () * value [1]), {})), {});
 }
 
 function __myfxbook_communityOutlook (session) {
-  var result = __myfxbook_requestResponse (__MYFXB_API_EP_COMMUNITYOUTLOOK, session);
+  var result = __myfxbook_requestResponse (__MYFXB_CFG ['EP_COMMUNITYOUTLOOK'], session);
   if (!util_is_null (result) && !util_is_null (result = result.getChildren ()
-        .reduce ((p, v) => util_str_lower (v.getName ()) == "community-outlook" && !util_is_null (v.getChild ("symbols")) ? v : p, undefined)))
+        .find (v => util_str_lower (v.getName ()) == "community-outlook" && !util_is_null (v.getChild ("symbols")))))
       result = __myfxbook_communityOutlookSymbols (result.getChild ("symbols").getChildren ());
   return result;
 }
@@ -135,37 +138,34 @@ function __myfxbook_communityOutlook (session) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __myfxbook_communityOutlookUpdate (session, origin = "foreground") {
-  var result; if (!util_is_null (result = __myfxbook_communityOutlook (session))) {
+  const result = __myfxbook_communityOutlook (session); if (!util_is_null (result)) {
     cache_writeWithLZ (__myfxbook_cacheKey ("CO", session), JSON.stringify (result));
     store_inc (__MYFXB_CLS, "update", "outlook", origin);
   }; return result;
 }
 
 function myfxbook_communityOutlookTime (session) {
-  var time = cache_time (__myfxbook_cacheKey ("CO", session));
+  const time = cache_time (__myfxbook_cacheKey ("CO", session));
   return !util_is_null (time) ? util_date_epochToStr_yyyymmddhhmmss (time) : undefined
 }
 function myfxbook_communityOutlookData (session) {
-  var result = cache_readWithLZ (__myfxbook_cacheKey ("CO", session), __myfxbook_cacheTimeOutlooksFrontEnd ());
+  const result = cache_readWithLZ (__myfxbook_cacheKey ("CO", session), __myfxbook_cacheTimeOutlooksFrontEnd ());
   return !util_is_null (result) ? JSON.parse (result) : __myfxbook_communityOutlookUpdate (session);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function __myfxbook_refresh_background_process () {
-  cache_iterator_expired (__myfxbook_cacheKey ("CO"), __myfxbook_cacheTimeOutlooksBackEnd, __MYFXB_CLS, "outlook", "refresh",
-    session => __myfxbook_communityOutlookUpdate (session, "background"));
+function __myfxbook_refresh_details () {
+  const __t = "background", __d = {
+    "CO": { time: __myfxbook_cacheTimeOutlooksBackEnd, name: "outlook", func: p => __myfxbook_communityOutlookUpdate (p, __t) },
+  }; return __d;
 }
-function __myfxbook_refresh_background () {
-  if (cache_checkany_expired (__myfxbook_cacheKey ("CO"), __myfxbook_cacheTimeOutlooksBackEnd))
-    system_schedule ('__myfxbook_refresh_background_process');
-}
-
-// -----------------------------------------------------------------------------------------------------------------------------------------
+function __myfxbook_refresh_background_process (keys) { cache_table_refresh_background_process (keys, __myfxbook_refresh_details (), __myfxbook_cacheKey, __MYFXB_CLS); }
+function __myfxbook_refresh_background () { cache_table_refresh_background (__myfxbook_refresh_details (), __myfxbook_cacheKey, '__myfxbook_refresh_background_process'); }
 
 function myfxbook_setup () {
-  run_handlerInsert (RUN_EVERY_MARKET_FAST, '__myfxbook_refresh_background');
+  app_run (RUN_EVERY_MARKET.FAST, '__myfxbook_refresh_background');
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------

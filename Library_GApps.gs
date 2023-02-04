@@ -23,14 +23,39 @@ function UTIL_SECS_STRNICELY (a) {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function util_sheet_colOffset (col_a, col_b) {
-  function __s (s, n) { return s.toString ().charCodeAt (n); }
-  return (col_b.toString ().length == 2 ? (((__s (col_b, 0) - 65) + 1) * 26) + (__s (col_b, 1) - 65) : (__s (col_b, 0) - 65)) - (__s (col_a, 0) - 65);
+  const __s1 = (s, n) => (s.toString ().charCodeAt (n) - 65), __s2 = (s) => s.toString ().length == 2 ? ((__s1 (s, 0) + 1) * 26) + __s1 (s, 1) : __s1 (s, 0); 
+  return __s2 (col_b) - __s2 (col_a);
 }
 function util_sheet_col2abc (col_num) {
   var a = ''; while (col_num > 0) a = String.fromCharCode (((col_num - 1) % 26) + 65) + a, col_num = (col_num - ((col_num - 1) % 26) - 1) / 26; return a;
 }
 function util_sheet_abc2col (col_abc) {
   var c = 0; for (var i = 0; i < col_abc.length; i++) c += (col_abc.toString ().charCodeAt (i) - 64) * Math.pow (26, (col_abc.length - i) - 1); return c;
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function util_sheet_toast (title, message, time = 30) {
+  SpreadsheetApp.getActiveSpreadsheet ().toast (title, message, time);
+}
+function util_sheet_popup (title, content) {
+  SpreadsheetApp.getUi ().showModelessDialog (HtmlService.createHtmlOutput (content) /*.setWidth(250).setHeight(300)*/, title);
+}
+function util_sheet_openUrl (url) {
+  SpreadsheetApp.getUi ().showModelessDialog (util_sheet_make_autourl (url), "Opening ...");
+}
+function util_sheet_sidebar (title, content) {
+  SpreadsheetApp.getUi ().showSidebar (HtmlService.createHtmlOutput (content).setTitle (title));
+}
+function util_sheet_make_autourl (url) {
+  return HtmlService.createHtmlOutput ('<html><script>'
+  +'window.cx = () => window.setTimeout (() => google.script.host.close (), 9);'
+  +'window.ex = (a) => { var e = document.createEvent ("MouseEvents"); if (navigator.userAgent.toLowerCase ().indexOf ("firefox") >= 0) window.document.body.append (a);'
+  +'  e.initEvent ("click", true, true); a.dispatchEvent (e); };'
+  +'var a = document.createElement ("a"); a.href = "'+url+'"; a.target = "_blank"; if (document.createEvent) window.ex (a); else a.click (); window.cx ();</script>'
+  +'<body style="word-break:break-word;font-family:sans-serif;">Failed to open automatically: <a href="'+url+'" target="_blank" onclick="window.cx ();">Click to proceed</a></body>'
+  +'<script>google.script.host.setHeight (40); google.script.host.setWidth (410);</script></html>')
+    .setWidth (90).setHeight (1);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -46,9 +71,6 @@ function util_sheet_waitForCalculations (time) {
   if (util_is_null (time) || time > 300 || time <= 0) time = 300; // max
   SpreadsheetApp.getActiveSpreadsheet ().waitForAllDataExecutionsCompletion (time);
 }
-function util_sheet_toast (title, message) {
-  SpreadsheetApp.getActiveSpreadsheet ().toast (title, message);
-}
 function util_sheet_nameOfDoc () {
   return SpreadsheetApp.getActiveSpreadsheet ().getName ();
 }
@@ -61,16 +83,28 @@ function util_sheet_refresh (name, cell) {
     range.setValues (values);
   }
 }
-function util_sheet_toggleVisibility (f_filter) { //function toggleSheetsConfig () { return util_sheet_toggleVisibility (n => n.substr (0, 2) == "C:"); }
+function util_sheet_visibilityToggle (f_filter) { //function toggleSheetsConfig () { return util_sheet_toggleVisibility (n => n.substr (0, 2) == "C:"); }
   var sheets = SpreadsheetApp.getActiveSpreadsheet ().getSheets ().filter (s => f_filter (s.getName ()));
   sheets.forEach (s => s.isSheetHidden () ? s.showSheet () : s.hideSheet ());
 }
-function util_sheet_setVisibility (f_filter, visible) { //function toggleSheetsConfig () { return util_sheet_toggleVisibility (n => n.substr (0, 2) == "C:"); }
+function util_sheet_visibilitySet (f_filter, visible) {
   var sheets = SpreadsheetApp.getActiveSpreadsheet ().getSheets ().filter (s => f_filter (s.getName ())); if (!visible) sheets = sheets.reverse ();
   sheets.forEach (s => visible && s.isSheetHidden () ? s.showSheet () : (!visible && !s.isSheetHidden () ? s.hideSheet () : undefined));
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
+
+function util_sheet_openByName (name) {
+  return !util_is_nullOrZero (name) ? SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (name) : undefined;
+}
+function util_sheet_openByLocation (location) {
+  return (!util_is_nullOrZero (location) && (location = util_str_split (location, ":")).length == 2) ? 
+     SpreadsheetApp.openById (location [0]).getSheetByName (location [1]) : undefined;
+}
+function util_sheet_getRangeByAddress (address) { var [sheet, range] = util_str_splitUnquoted (address, "!");
+    var range2, sheet2 = SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (sheet.replaceAll ("'", ""));
+    if (!util_is_nullOrZero (sheet2) && !util_is_nullOrZero (range2 = sheet2.getRange (range))) return range2;
+    return undefined; }
 
 function util_sheet_contentDelete (sheet, row, col_beg = "A", col_end = "") {
   if (sheet.getMaxRows () > (row - 1)) {
@@ -88,23 +122,6 @@ function util_sheet_contentInsert (sheet, row, col, content, format) {
 }
 function util_sheet_buildFromArray (sheet, row_headers, row_data, col_beg, col_end, data_list, data_callback, data_callargg, sheet_archive, format) {
   var timestamp = util_date_strAsyyyymmddhhmmss ();
-  var headers = util_sheet_headersLoad (sheet, row_headers, col_beg, col_end);
-  var content = Array ();
-  var skipped = data_list.reduce ((skipped, data) => {
-    skipped = skipped.concat (Object.keys (data).filter (v => ! headers.includes (v)));
-    if (!util_is_null (data_callback)) data_callback (data, data_callargg);
-    data.timestamp = timestamp;
-    content.push (util_sheet_headersOrder (headers, data));
-    return skipped;
-  }, Array ());
-  util_sheet_contentDelete (sheet, row_data, col_beg, col_end);
-  util_sheet_contentInsert (sheet, row_data, col_beg, content, format);
-  if (!util_is_null (sheet_archive))
-    util_sheet_contentInsert (sheet_archive, (sheet_archive.getLastRow () + 1), col_beg, content, format);
-  return { length: data_list.length, skipped: util_uniq (skipped) };
-}
-function util_sheet_buildFromArray2 (sheet, row_headers, row_data, col_beg, col_end, data_list, data_callback, data_callargg, sheet_archive, format) {
-  var timestamp = util_date_strAsyyyymmddhhmmss ();
   var headers = util_sheet_headersLoad (!util_is_null (sheet) ? sheet : sheet_archive, row_headers, col_beg, col_end);
   var content = Array ();
   var skipped = data_list.reduce ((skipped, data) => {
@@ -120,7 +137,6 @@ function util_sheet_buildFromArray2 (sheet, row_headers, row_data, col_beg, col_
     util_sheet_contentInsert (sheet_archive, (sheet_archive.getLastRow () + 1), col_beg, content, format);
   return { length: data_list.length, skipped: util_uniq (skipped) };
 }
-
 function util_sheet_findDestroyCreate (spread, sheet_tpl, name, delete_ok) {
   var sheet = spread.getSheetByName (name), created = false;
   if (!util_is_null (sheet) && (!util_is_null (delete_ok) && delete_ok == true))
@@ -136,12 +152,15 @@ function util_sheet_findDestroyCreate (spread, sheet_tpl, name, delete_ok) {
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_sheet_rowHide (sheet, minimum) {
-  if (!util_is_null (minimum) && sheet.getMaxRows () > (minimum - 1))
+function util_sheet_rowHideBySheet (sheet, minimum = 10) {
+  if (!util_is_null (sheet) && !util_is_null (minimum) && sheet.getMaxRows () > (minimum - 1))
     sheet.hideRows (minimum, sheet.getMaxRows () + 1 - minimum);
 }
+function util_sheet_rowHideByName (name, minimum = 10) {
+  return util_sheet_rowHideBySheet (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (name), minimum);
+}
 function util_sheet_rowPushAndHide (sheet, r1, r2, minimum, values) {
-  sheet.insertRowsBefore (r1, values.length).getRange (r2).setValues (values); util_sheet_rowHide (sheet, minimum);
+  sheet.insertRowsBefore (r1, values.length).getRange (r2).setValues (values); util_sheet_rowHideBySheet (sheet, minimum);
 }
 function util_sheet_rowPrune (sheet, minimum) {
   if (!util_is_nullOrZero (minimum) && sheet.getMaxRows () > (minimum - 1)) sheet.deleteRows (minimum, sheet.getMaxRows () + 1 - minimum);
@@ -152,20 +171,26 @@ function util_sheet_rowAppend (sheet, values) {
 function util_sheet_rowUpdate (sheet, updates) {
   updates.forEach (content => sheet.getRange (content.row, 1, 1, content.values [0].length).setValues (content.values));
 }
-function util_sheet_rowRemoveEmptyTrailing (name, leave = 0) {
+function util_sheet_rowRemoveEmptyTrailingByName (name, leave = 0) {
   return util_sheet_rowRemoveEmptyTrailingBySheet (SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (name), leave);
 }
 function util_sheet_rowRemoveEmptyTrailingBySheet (sheet, leave = 0) {
   if (!util_is_null (sheet)) {
-    const row_beg = sheet.getLastRow () + 1, row_end = sheet.getMaxRows ();
-    if ((row_end - leave) > row_beg)
-      sheet.deleteRows (row_beg, (row_end - leave) - row_beg);
+    var row_beg = (sheet.getLastRow () + 1) + leave, row_end = sheet.getMaxRows () + 1;
+    if (row_end > row_beg)
+      sheet.deleteRows (row_beg, row_end - row_beg);
   }
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function util_sheet_headersLoad (sheet, row, col_beg, col_end) {
+function util_sheet_columnLoad (sheet, col, row, map = (x) => x) {
+  return sheet.getRange (col + row + ":" + col).getValues ().map (v => map (v [0]));
+}
+
+// -----------------------------------------------------------------------------------------------------------------------------------------
+
+function util_sheet_headersLoad (sheet, row = 1, col_beg = "A", col_end = undefined) {
   return sheet.getRange (col_beg + row + ":" + (col_end ? col_end : util_sheet_col2abc (sheet.getLastColumn ())) + row).getValues () [0];
 }
 function util_sheet_headersFind (headers, name) {

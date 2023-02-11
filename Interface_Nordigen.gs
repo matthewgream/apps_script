@@ -7,6 +7,8 @@ var __NORDIGEN_CLS = "nordigen";
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function TEST_NORDIGEN () { __TEST_SETUP ();
+  [ "GB", "FR", "SE" ].forEach (x => debugLog (x + " --> " + NORDIGEN_INSTITUTIONS (NORDIGEN_DEFAULT_ID, NORDIGEN_DEFAULT_KEY, x)));
+  NORDIGEN_ACCOUNT_LIST ().forEach (x => debugLog (x + " --> " + NORDIGEN_BALANCE (NORDIGEN_DEFAULT_ID, NORDIGEN_DEFAULT_KEY, x)));
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -23,7 +25,7 @@ function __nordigen_validAccount (x) { return (!util_is_null (x) && (x.length ==
 function __nordigen_validAccountIndex (x) { return (!util_is_nullOrZero (x) && ((x * 1.0) >= -2)) ? true : false; }
 function __nordigen_validAccountName (x) { return (!util_is_nullOrZero (x)) ? true : false; }
 function __nordigen_validInstitution (x) { return (!util_is_nullOrZero (x)) ? true : false; }
-function __nordigen_validCountry (x) { return (!util_is_nullOrZero (x) && (x == "GB")) ? true : false; }
+function __nordigen_validCountry (x) { return (!util_is_nullOrZero (x) && (x == "GB" || x == "FR" || x == "SE")) ? true : false; } // XXX for now
 function __nordigen_validCurrency (x) { return (!util_is_null (x) && (x.length == 3)) ? true : false; }
 function __nordigen_validDate (x) { return (!util_is_nullOrZero (x)) ? true : false; }
 function __nordigen_validTransactionType (x) { return (!util_is_nullOrZero (x) && (x == "booked" || x == "pending")) ? true : false; }
@@ -38,8 +40,7 @@ function __nordigen_validTransactionType (x) { return (!util_is_nullOrZero (x) &
 // S25: "Monzo Bank Limited"
 // T25: 1
 //
-// I25: =NORDIGEN_BALANCE_VALUE (N25, O25, Q25, J25)
-// J25: "GBP"
+// I25: =NORDIGEN_BALANCE_VALUE (N25, O25, Q25)
 //
 // M25: =NORDIGEN_BALANCE_TIMESTAMP (N25, O25, Q25)
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -50,7 +51,7 @@ function NORDIGEN_INSTITUTIONS (secret_id, secret_key, country) {
   var institutions = cache_readWithLZ (cache_key, __nordigen_cacheTimeInstitutions ());
   if (!util_is_null (institutions))
     institutions = JSON.parse (institutions);
-  else if (util_is_null (institutions) && !util_is_null (institutions = (__nordigen_institutions (token, country)).map (v => v.name)))
+  else if (!util_is_nullOrZero (institutions = (__nordigen_institutions (token, country)).map (v => v.name)))
     cache_writeWithLZ (cache_key, JSON.stringify (institutions));
   store_inc (__NORDIGEN_CLS, "institutions", country);
   return institutions;
@@ -67,15 +68,15 @@ function NORDIGEN_TRANSACTIONS (secret_id, secret_key, account, type, date_beg, 
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function NORDIGEN_BALANCE (secret_id, secret_key, account, currency) {
-  util_args_check (__nordigen_validSecretId (secret_id) && __nordigen_validSecretKey (secret_key) && __nordigen_validAccount (account) && __nordigen_validCurrency (currency));
-  const balance = cache_read (__nordigen_cacheKey ("BV", [account, secret_id, secret_key].join ("/")), __nordigen_cacheTimeBalanceFrontEnd ());
+function NORDIGEN_BALANCE (secret_id, secret_key, account) {
+  util_args_check (__nordigen_validSecretId (secret_id) && __nordigen_validSecretKey (secret_key) && __nordigen_validAccount (account));
+  const balance = cache_read (__nordigen_cacheKey ("BX", [account, secret_id, secret_key].join ("/")), __nordigen_cacheTimeBalanceFrontEnd ());
   store_inc (__NORDIGEN_CLS, "balance", account);
-  return (!util_is_null (balance) ? balance : __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account, currency)) * 1.0;
+  return !util_is_null (balance) ? JSON.parse (balance) : __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account);
 }
-function __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account, currency, origin = "foreground") {
-  const balance = nordigen_accountBalanceWithCurrency (__nordigen_access_token (secret_id, secret_key), account, currency); if (!util_is_null (balance)) {
-    cache_write (__nordigen_cacheKey ("BV", [account, secret_id, secret_key].join ("/")), balance);
+function __NORDIGEN_BALANCE_UPDATE (secret_id, secret_key, account, origin = "foreground") {
+  var balance = nordigen_accountBalanceWithCurrency (__nordigen_access_token (secret_id, secret_key), account); if (!util_is_null (balance)) {
+    cache_write (__nordigen_cacheKey ("BX", [account, secret_id, secret_key].join ("/")), JSON.stringify (balance));
     store_inc (__NORDIGEN_CLS, "update", "balance", origin);
   }; return balance;
 }
@@ -109,7 +110,7 @@ function NORDIGEN_ACCOUNT_ID (secret_id, secret_key, account_name, account_count
     cache_del (__nordigen_cacheKey ("AU", account_name));
   }
 
-  store_inc (__NORDIGEN_CLS, "account-id", account_name);
+  store_inc (__NORDIGEN_CLS, "account", account_name);
 
   var account_id = cache_read (__nordigen_cacheKey ("AC", account_name+"("+account_index+")"), __nordigen_cacheTimeAuthorisation ());
   if (account_index > 0 && !util_is_null (account_id))
@@ -196,7 +197,7 @@ function __nordigen_requestResponse (token, url) {
 
 function __nordigen_accesstoken (secret_id, secret_key) {
   const result = __nordigen_requestResponseToken (secret_id, secret_key);
-  return (util_is_nullOrZero (result) || util_is_nullOrZero (result.access)) ? undefined : result.access;
+  return !util_is_nullOrZero (result) && !util_is_nullOrZero (result.access) ? result.access : undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -213,22 +214,18 @@ function __nordigen_requisition (token, institution_id) {
 
 function __nordigen_requisitionAccounts (token, institution_id) {
   const result = __nordigen_requisitionFind (token, institution_id);
-  if (util_is_nullOrZero (result) || util_is_nullOrZero (result.accounts))
-    return undefined;
-  return result.accounts.sort (); // linked vs. CR=created
+  return !util_is_nullOrZero (result) && !util_is_nullOrZero (result.accounts) ? result.accounts.sort () : undefined;
 }
 
 function __nordigen_requisitionFind (token, institution_id) {
-  var url = __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_REQUISITIONS'], requisition = undefined;
-  while (!util_is_null (url)) {
-    const requisitions = __nordigen_requestResponse (token, url);
-    if (util_is_nullOrZero (requisitions))
-      break;
-    if (!util_is_nullOrZero (requisition = requisitions.results.find (v => v.status == "LN" && v.institution_id == institution_id))) // linked vs. CR=created
-      break;
+  var url = __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_REQUISITIONS'], requisitions;
+  while (!util_is_null (url) && !util_is_nullOrZero (requisitions = __nordigen_requestResponse (token, url))) {
+    const requisition = requisitions.results.find (v => v.status == "LN" && v.institution_id == institution_id); // linked vs. CR=created
+    if (!util_is_nullOrZero (requisition))
+      return requisition;
     url = requisitions.next;
   }
-  return requisition;
+  return undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -237,16 +234,9 @@ function __nordigen_accountBalance (token, account_id) {
   return __nordigen_requestResponse (token, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_ACCOUNTS'] + account_id + "/balances/");
 }
 
-function nordigen_accountBalanceWithCurrency (token, account_id, currency) {
-//  if (util_is_nullOrZero (currency))
-//    return app_error_throw2 (__NORDIGEN_CLS, "GET_BALANCE: currency not defined"); // does not return
+function nordigen_accountBalanceWithCurrency (token, account_id) {
   const result = __nordigen_accountBalance (token, account_id);
-  if (util_is_nullOrZero (result) || util_is_nullOrZero (result.balances))
-    return undefined;
-  const balance = result.balances [0]; // hope it's always like that
-  if (!util_is_nullOrZero (currency) && balance.balanceAmount.currency != currency)
-    return app_error_throw (__NORDIGEN_CLS, "NORDIGEN_BALANCE: currency mismatch, got " + balance.balanceAmount.currency + ", expected " + currency); // does not return
-  return balance.balanceAmount.amount;
+  return !util_is_nullOrZero (result) && !util_is_nullOrZero (result.balances) ? [result.balances [0].balanceAmount.amount * 1.0, result.balances [0].balanceAmount.currency]  : undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -255,15 +245,15 @@ function __nordigen_accountTransactions (token, account_id, date_beg, date_end) 
   const args = Array ();
   if (!util_is_nullOrZero (date_beg)) args.push ("date_from=" + date_beg);
   if (!util_is_nullOrZero (date_end)) args.push ("date_to=" + util_date_strAsyyyymmdd_minusminus (date_end)); // XXX
-  return __nordigen_requestResponse (token, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_ACCOUNTS'] + account_id + "/transactions/" + (args.length > 0 ? "?" + util_str_join (args, "&") : ""));
+  args = args.length > 0 ? "?" + util_str_join (args, "&") : "";
+  return __nordigen_requestResponse (token, __NORDIGEN_CFG ['URL_BASE'] + __NORDIGEN_CFG ['EP_ACCOUNTS'] + account_id + "/transactions/" + args);
 }
 
 function nordigen_accountTransactions (token, account_id, type, date_beg, date_end) {
   const result = __nordigen_accountTransactions (token, account_id, date_beg, date_end);
-  if (util_is_nullOrZero (result) || util_is_nullOrZero (result.transactions))
-    return undefined;
-  return ((type == "booked") ? result.transactions.booked : ((type == "pending") ? results.transactions.pending : undefined))
-    .sort ((a, b) => (a.bookingDate < b.bookingDate) ? -1 : ((a.bookingDate > b.bookingDate) ? 1 : 0));
+  return !util_is_nullOrZero (result) && !util_is_nullOrZero (result.transactions) ? 
+    ((type == "booked") ? result.transactions.booked : ((type == "pending") ? results.transactions.pending : undefined))
+    .sort ((a, b) => (a.bookingDate < b.bookingDate) ? -1 : ((a.bookingDate > b.bookingDate) ? 1 : 0)) : undefined;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
@@ -271,7 +261,7 @@ function nordigen_accountTransactions (token, account_id, type, date_beg, date_e
 
 function __nordigen_refresh_details () {
   const __p = (p, n) => p.split ("/") [n], __t = "background", __d = {
-    "BV": { time: __nordigen_cacheTimeBalanceBackEnd, name: "accounts", func: p => __NORDIGEN_BALANCE_UPDATE (__p (p, 1), __p (p, 2), __p (p, 0), undefined, __t) },
+    "BX": { time: __nordigen_cacheTimeBalanceBackEnd, name: "accounts", func: p => __NORDIGEN_BALANCE_UPDATE (__p (p, 1), __p (p, 2), __p (p, 0), __t) },
   }; return __d;
 }
 function __nordigen_refresh_background_process (keys) { cache_table_refresh_background_process (keys, __nordigen_refresh_details (), __nordigen_cacheKey, __NORDIGEN_CLS); }

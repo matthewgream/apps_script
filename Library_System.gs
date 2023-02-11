@@ -22,21 +22,22 @@ function SYSTEM_STORE_GET (a, b, c, d) {
 function SYSTEM_STATUS (modules) {
   if (util_is_nullOrZero (modules)) throw "no status defined";
   if (!Array.isArray (modules)) modules = [ modules ];
-  modules = modules.map (module => { var status_f = module + "_status"; if (!util_function_exists (status_f)) throw "invalid status defined: " + module; return status_f;  });
+  modules = modules.map (module => { const status_f = module + "_status";
+    if (!util_function_exists (status_f)) throw "invalid status defined: " + module; return status_f;  });
   return Object.entries (modules.reduce ((p, status_f) => util_merge (p, util_function_call (status_f)), {}))
     .map (([k, v]) => Array.isArray (v) ? v.map (vv => k + ": " + vv) : [k + ": " + v]).flat (Infinity);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function __system_modules_list () { return [ 
-  "deployments", "cache", "queue", "store", "timer", "handler", "connect", "runner", "log", "config" 
+function __system_modules_list () { return [
+  "deployments", "cache", "queue", "store", "timer", "handler", "connect", "runner", "log", "config"
 ]; }
-function __system_modules_data () { 
-  var WARNING_SIZE_STORAGE  = 425*1024;           // 425, makes is 500 of property storage size
-  var WARNING_SIZE_CONNECT  = 25*1000;            // 25K per day, can go 100K on enterprise
-  var WARNING_SIZE_LOG      = 150*1000;           // too many log lines
-  var WARNING_SIZE_TIMER    = 18;                 // 20 is system limit
+function __system_modules_data () {
+  const WARNING_SIZE_STORAGE  = 425*1024;           // 425, makes is 500 of property storage size
+  const WARNING_SIZE_CONNECT  = 25*1000;            // 25K per day, can go 100K on enterprise
+  const WARNING_SIZE_LOG      = 150*1000;           // too many log lines
+  const WARNING_SIZE_TIMER    = 18;                 // 20 is system limit
   return {
     storage: { threshold: WARNING_SIZE_STORAGE, limit: 512*1024, size: () => (cache_len () + queue_len () + store_len ()) },
     connect: { threshold: WARNING_SIZE_CONNECT, limit: 100*1000, size: connect_cnt },
@@ -46,15 +47,13 @@ function __system_modules_data () {
 }
 function __system_state () {
   store_inc ("system", "functions", "state");
-  return __system_modules_list ().filter (v => util_function_exists (v + "_cnt")).map (v =>
-    v + ": " + util_function_call (v + "_cnt") + (util_function_exists (v + "_len") ? "/" + util_function_call (v + "_len") : "")
-                + (util_function_exists (v + "_str") ? "/" + util_function_call (v + "_str") : "")
-  ).join (", ");
+  const __ccall = (v, x, s) => (util_function_exists (v + x) ? s + util_function_call (v + x) : "");
+  return __system_modules_list ().map (v => v + __ccall (v, "_cnt", ": ") + __ccall (v, "_len", "/") + __ccall (v, "_str", "/")).join (", ");
 }
 function __system_checks () {
   store_inc ("system", "functions", "checks");
   Object.entries (__system_modules_data ()).forEach (([n, d]) => {
-    var size = d.size (), threshold = d.threshold, limit = d.limit; if (size > threshold) {
+    const size = d.size (), threshold = d.threshold, limit = d.limit; if (size > threshold) {
       var message = "system " + n + " at " + util_str_niceNum (size) + " (above " + util_str_niceNum (threshold) + ", limit " + util_str_niceNum (limit) + ")";
       if (!util_is_null (d.action) && util_function_exists (d.action)) util_function_call (d.action), message += " [action taken: " + d.action + "]";
       system_error ("warning", message, undefined, __system_state ());
@@ -63,45 +62,43 @@ function __system_checks () {
 }
 function __system_backup () {
   store_inc ("system", "functions", "backup");
-  var [a, b, c] = util_drive_backup (SpreadsheetApp.getActiveSpreadsheet ());
+  const [a, b, c] = util_drive_backup (SpreadsheetApp.getActiveSpreadsheet ());
   system_info ("backup", "'" + a + "' to '" + b + "' at " + c);
 }
 function __system_status () {
   store_inc ("system", "functions", "status");
-  var status_functions = util_function_find (v => !v.startsWith ("__") && !v.startsWith ("system") && v.endsWith ("_status"));
-  var status = status_functions.reduce ((p, v) => util_merge (p, util_function_call (v)), { "system": __system_state () });
-  var m = Object.entries (status).map (([k, v]) => Array.isArray (v) ? v.map (vv => k + ": " + vv) : [k + ": " + v]).flat (Infinity);
-  system_info ("status", util_date_strAsyyyymmddhhmmss (), undefined, m);
+  const status_functions = util_function_find (v => !v.startsWith ("__") && !v.startsWith ("system") && v.endsWith ("_status"));
+  const status = status_functions.reduce ((p, v) => util_merge (p, util_function_call (v)), { "system": __system_state () });
+  const messages = Object.entries (status).map (([k, v]) => Array.isArray (v) ? v.map (vv => k + ": " + vv) : [k + ": " + v]).flat (Infinity);
+  system_info ("status", util_date_strAsyyyymmddhhmmss (), undefined, messages);
 }
 function __system_store (s, f) {
   store_inc ("system", "functions", "store");
   if (s == "OK") s = undefined;
-  var r = util_tree_flat (Object.entries (store_lst ()).reduce ((t, [k, v]) => util_tree_push (t, util_str_split (k, ";"), util_str_isnum (v) ? (v * 1.0) : v), {}), ",")
-    .map (v => [v.n, v.v]).concat ([[ "_current", util_date_strAsISO () ]]);
+  var t = Object.entries (store_lst ()).reduce ((t, [k, v]) => util_tree_push (t, util_str_split (k, ";"), util_str_isnum (v) ? (v * 1.0) : v), {});
+  var r = util_tree_flat (t, ",").map (v => [v.n, v.v]).concat ([[ "_current", util_date_strAsISO () ]]);
   if (!util_is_nullOrZero (s) && !util_is_nullOrZero (s = s.split (";"))) r = r.filter (rr => s.some (ss => rr [0].startsWith (ss)));
-  if (!util_is_nullOrZero (f) && !util_is_nullOrZero (f = f.split (";"))) r = r.filter (rr => !f.some (ff => rr [0].startsWith (ff)));
+  if (!util_is_nullOrZero (f) && !util_is_nullOrZero (f = f.split (";"))) r = r.filter (rr => ! f.some (ff => rr [0].startsWith (ff)));
   return r.sort ((a, b) => (a [0] == b [0]) ? 0 : ((a [0] < b [0]) ? -1 : 1));
 }
 function __system_store_reset () {
-  var str = "reset [was: " + store_get ("_started") + " @ " + util_str_niceNum (store_len ()) + "]";
+  const str = "reset [was: " + store_get ("_started") + " @ " + util_str_niceNum (store_len ()) + "]";
   store_rst ();
   store_set (util_date_strAsISO (), "_started");
   system_info ("store", str);
   return "OK";
 }
 function __system_setup (user, info) {
-  var setup_functions = util_function_find (v => !v.startsWith ("__") && !v.startsWith ("system") && v.endsWith ("_setup"));
+  const setup_functions = util_function_find (v => !v.startsWith ("__") && !v.startsWith ("system") && v.endsWith ("_setup"));
   setup_functions.forEach (util_function_call);
   user = "opened by " + (util_is_nullOrZero (user) ? "(unknown)" : user);
   system_info ("setup", user, undefined, info);
   system_debug ("setup", "using, " + util_str_join (setup_functions.map (v => v.replace ("_setup", "")), ", "));
-
   __system_timer_setup (timer_createMinutes, "__system_logger", 1);
   __system_timer_setup (timer_createMinutes, "__system_runner", 1);
   __system_timer_setup (timer_createHours,   "__system_status", 6);
   __system_timer_setup (timer_createHours,   "__system_checks", 1);
   __system_timer_setup (timer_createWeekly,  "__system_backup", ScriptApp.WeekDay.SATURDAY, 1);
-
   if (!store_get ("_started"))
     store_rst (), store_set (util_date_strAsISO (), "_started");
   store_inc ("system", "functions", "setup");
@@ -156,11 +153,11 @@ function cache_cnt ()             { return __stg_cnt (__c_p (), __c_n ()); }
 
 function cache_expired (k, s)     { return !__c_v (__c_p ().getProperty (__c_n (k, "T")) * 1.0, s); }
 function cache_duration (k, s)    { return __c_t (__c_p ().getProperty (__c_n (k, "T")) * 1.0); }
-function cache_timestamp (k)      { var t = __c_p ().getProperty (__c_n (k, "T")); return (t == undefined) ? "none" : util_date_epochToStr_ISO (t * 1.0); }
-function cache_readWithLZ (k, s)  { var x = cache_read (k, s); if (x != undefined) return LZString.decompressFromUTF16 (x); }
+function cache_timestamp (k)      { const t = __c_p ().getProperty (__c_n (k, "T")); return (t == undefined) ? "none" : util_date_epochToStr_ISO (t * 1.0); }
+function cache_readWithLZ (k, s)  { const x = cache_read (k, s); if (x != undefined) return LZString.decompressFromUTF16 (x); }
 function cache_writeWithLZ (k, v) { if (v != undefined) v = LZString.compressToUTF16 (v); cache_write (k, v); }
 function cache_times (s)          { return Object.entries (__c_p ().getProperties ()).filter (([k, v]) => __c_x (k, s)).map (([k, v]) => v * 1.0); }
-function cache_time (k)           { var t = __c_p ().getProperty (__c_n (k, "T")); return (t == undefined) ? undefined : t * 1.0; }
+function cache_time (k)           { const t = __c_p ().getProperty (__c_n (k, "T")); return (t == undefined) ? undefined : t * 1.0; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
@@ -168,9 +165,9 @@ var __system__q_p = undefined;
 function __q_p ()                 { if (__system__q_p == undefined) __system__q_p = PropertiesService.getDocumentProperties (); return __system__q_p; }
 function __q_n (i, s)             { return "Q" + ((i == undefined) ? "" : (i + ((s == undefined) ? "" : ("_" + s + "_")))); }
 function queue_pop_n (i, s)       { var c = __q_p ().getProperty (__q_n (i, s)); c = (c == undefined) ? 1 : c * 1.0; __q_p ().setProperty (__q_n (i, s), (c == 9999999) ? 1 : c + 1.0); return c; }
-function queue_get_n (i, s)       { var c = __q_p ().getProperty (__q_n (i, s)); return (c == undefined) ? 1 : c * 1.0; }
+function queue_get_n (i, s)       { const c = __q_p ().getProperty (__q_n (i, s)); return (c == undefined) ? 1 : c * 1.0; }
 function queue_set_n (i, s, c)    { c = (c == 9999999) ? 1 : c + 1.0; __q_p ().setProperty (__q_n (i, s), c); return c; }
-function queue_pop_c (i, c)       { var m = __q_p ().getProperty (__q_n (i, "#_" + c)); __q_p ().deleteProperty (__q_n (i, "#_" + c)); return m == undefined ? m : JSON.parse (m); }
+function queue_pop_c (i, c)       { const m = __q_p ().getProperty (__q_n (i, "#_" + c)); __q_p ().deleteProperty (__q_n (i, "#_" + c)); return m == undefined ? m : JSON.parse (m); }
 function queue_set_c (i, c, m)    { if (m == undefined) return false; __q_p ().setProperty (__q_n (i, "#_" + c), JSON.stringify (m)); return true; }
 function queue_rst (i)            { return __stg_clr (__q_p (), __q_n (i)); }
 function queue_len (i)            { return __stg_len (__q_p (), __q_n (i)); }
@@ -179,32 +176,32 @@ function queue_cnt (i)            { return __stg_cnt (__q_p (), __q_n (i)); }
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 var __system__s_p = undefined;
-function __s_p ()                 { if (__system__s_p == undefined) __system__s_p = PropertiesService.getDocumentProperties (); return __system__s_p; }
+function __s_p ()                 { if (__system__s_p == undefined) __system__s_p = PropertiesService.getScriptProperties (); return __system__s_p; }
 function __s_n (i, j, k, l)       { return "M" + (((i==undefined)?"":(";"+i)) + ((j==undefined)?"":(";"+j)) + ((k==undefined)?"":(";"+k)) + ((l==undefined)?"":(";"+l))); }
 function __s_i (s)                { return Object.entries (__s_p ().getProperties ()).filter (([k, v]) => util_str_isprefix (k, s)); }
 function store_get (i, j, k, l)   { return __s_p ().getProperty (__s_n (i, j, k, l)); }
 function store_inc (i, j, k, l)   { __s_p ().setProperty (__s_n (i, j, k, l), (__s_p ().getProperty (__s_n (i, j, k, l)) * 1.0) + 1.0); }
 function store_add (v, i, j, k, l){ __s_p ().setProperty (__s_n (i, j, k, l), (__s_p ().getProperty (__s_n (i, j, k, l)) * 1.0) + (v * 1.0)); }
-function store_app (v, i, j, k, l){ var vv = __s_p ().getProperty (__s_n (i, j, k, l)); __s_p ().setProperty (__s_n (i, j, k, l), vv == undefined ? v : vv + "," + v); }
+function store_app (v, i, j, k, l){ const vv = __s_p ().getProperty (__s_n (i, j, k, l)); __s_p ().setProperty (__s_n (i, j, k, l), vv == undefined ? v : vv + "," + v); }
 function store_set (v, i, j, k, l){ __s_p ().setProperty (__s_n (i, j, k, l), v); }
 function store_sum (i, j, k, l)   { return __s_i (__s_n (i, j, k, l)).reduce ((z, [k, v]) => z + (v * 1.0), 0); }
-function store_lst (i, j, k, l)   { var s = __s_n (i, j, k, l); return __s_i (s).reduce ((z, [k, v]) => util_assign (z, util_str_substr (k, 1 + s.length), v), {}); }
+function store_lst (i, j, k, l)   { const s = __s_n (i, j, k, l); return __s_i (s).reduce ((z, [k, v]) => util_assign (z, util_str_substr (k, 1 + s.length), v), {}); }
 function store_clr (i, j, k, l)   { return __stg_clr (__s_p (), __s_n (i, j, k, l)); }
 function store_rst (i, j, k, l)   { return __stg_clr (__s_p (), __s_n (i, j, k, l)); }
 function store_len ()             { return __stg_len (__s_p (), __s_n ()); }
 function store_cnt ()             { return __stg_cnt (__s_p (), __s_n ()); }
-function store_gst (f,i,j,k,l)    { var x = f (store_get (i, j, k, l)); if (x != undefined) store_set (x, i, j, k, l); return x; }
+function store_gst (f,i,j,k,l)    { const x = f (store_get (i, j, k, l)); if (x != undefined) store_set (x, i, j, k, l); return x; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function data_cache_gets (n, compressed = true) {
-  var c = CacheService.getScriptCache (), k = c.get ("C/L/" + n); if (k == null || (k * 1.0) == 0) return undefined;
-  var b = c.getAll (k = Array.from ({ length: k }, (v, i) => "C/D/" + n + "/" + i));
+  const c = CacheService.getScriptCache (); var k = c.get ("C/L/" + n); if (k == null || (k * 1.0) == 0) return undefined;
+  const b = c.getAll (k = Array.from ({ length: k }, (v, i) => "C/D/" + n + "/" + i));
   return compressed ? LZString.decompressFromUTF16 (k.map (x => b [x]).join ("")) : k.map (x => b [x]).join ("");
 }
 function data_cache_puts (n, s, compressed = true, t = 21600) {
-  var c = CacheService.getScriptCache (), b = util_str_chunk (compressed ? LZString.compressToUTF16 (s) : s, (100*1000)-1), k = Array.from ({ length: b.length }, (v, i) => "C/D/" + n + "/" + i);
+  const c = CacheService.getScriptCache (), b = util_str_chunk (compressed ? LZString.compressToUTF16 (s) : s, (100*1000)-1), k = Array.from ({ length: b.length }, (v, i) => "C/D/" + n + "/" + i);
   c.put ("C/L/" + n, b.length, t), c.putAll (k.reduce ((p, v, i) => util_assign (p, v, b [i]), {}), t);
 }
 
@@ -229,24 +226,21 @@ var __system__log_queue = "lq";
 function __log_queueClear () { queue_rst (__system__log_queue); }
 function __log_queueSize () { return queue_get_n (__system__log_queue, "W") - queue_get_n (__system__log_queue, "R"); }
 function __log_queueInsert (m) { if (!util_is_nullOrZero (m)) queue_set_c (__system__log_queue, queue_pop_n (__system__log_queue, "W"), m); }
-function __log_queueObtain () { var m = Array (), w = queue_get_n (__system__log_queue, "W") - 1, r = queue_get_n (__system__log_queue, "R");
+function __log_queueObtain () { const m = Array (), w = queue_get_n (__system__log_queue, "W") - 1; var r = queue_get_n (__system__log_queue, "R");
   if (r < w && queue_set_n (__system__log_queue, "R", w)) while (r <= w) m.unshift (queue_pop_c (__system__log_queue, r ++)); return m.filter (m_ => m_ != undefined && m_.length > 0); }
 
 var __system__log_sheet = { ref: undefined, tab: '!', col: 1, row: 10, len: 42 }
 function __log_sheetLoad () { __system__log_sheet ['ref'] = SpreadsheetApp.getActiveSpreadsheet ().getSheetByName (__system__log_sheet ['tab']); }
 function __log_sheetClear () { if (__system__log_sheet ['ref'] == undefined) __log_sheetLoad (); util_sheet_rowPrune (__system__log_sheet ['ref'], __system__log_sheet ['len']); }
 function __log_sheetSize () { if (__system__log_sheet ['ref'] == undefined) __log_sheetLoad (); return __system__log_sheet ['ref'].getLastRow () - 1; }
-function __log_sheetInsert (m) { if (__system__log_sheet ['ref'] == undefined) __log_sheetLoad (); 
+function __log_sheetInsert (m) { if (__system__log_sheet ['ref'] == undefined) __log_sheetLoad ();
   if (m.length > 0) util_sheet_rowPushAndHide (__system__log_sheet ['ref'], __system__log_sheet ['row'],
-  util_sheet_col2abc (__system__log_sheet ['col']) + __system__log_sheet ['row'] + ":" + util_sheet_col2abc (__system__log_sheet ['col'] + m [0].length - 1) + 
+  util_sheet_col2abc (__system__log_sheet ['col']) + __system__log_sheet ['row'] + ":" + util_sheet_col2abc (__system__log_sheet ['col'] + m [0].length - 1) +
     ((__system__log_sheet ['row'] - 1) + m.length), __system__log_sheet ['len'], m); return m.length; }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-var log_cnt = __log_queueSize;
-var log_len = __log_sheetSize;
-var log_str = log_state;
-var log_reduce = __log_sheetClear;
+var log_cnt = __log_queueSize, log_len = __log_sheetSize, log_str = log_state, log_reduce = __log_sheetClear;
 function log_flush () {
   return __log_sheetInsert (__log_queueObtain ()); }
 function log_state () {
@@ -256,23 +250,24 @@ function log_process () { const size = (log_state () != "suspended") ? __log_she
 function log_suspend (v) { const sold = log_state (), snew = v ? "suspended" : "operating";
   if (!sold || snew != sold) store_set (snew, "system", "logger", "state"), system_debug ("system","logger: state=" + snew); }
 
-var __system_logger = () => log_process ();
+function __system_logger () { log_process (); }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
-function escape_comma (s) { return s.replaceAll (",", '&#2C;').replaceAll (":", '&#3A;'); }
-function unescape_comma (s) { return s.replaceAll ('&#2C;', ",").replaceAll ('&#3A;', ":"); }
+function __args_encode (s) { return s.replaceAll (",", '&#2C;').replaceAll (":", '&#3A;'); }
+function __args_decode (s) { return s.replaceAll ('&#2C;', ",").replaceAll ('&#3A;', ":"); }
 
 function __system_schedule_key (t) { return "SCHD_" + t; }
 
 function __system_schedule_push (callback, arguments) {
   if (!util_function_exists (callback)) system_error_throw ("scheduler", "invalid callback: " + callback);
   if (!util_is_null (arguments))
-    callback += (":" + escape_comma (JSON.stringify (arguments)));
+    callback += (":" + __args_encode (JSON.stringify (arguments)));
   util_lock_wrapper ("Script", util_lock_seconds (30), () => {
     var queue = cache_read (__system_schedule_key ("queue"));
-    cache_write (__system_schedule_key ("queue"), util_is_nullOrZero (queue) ? callback : (queue + "," + callback));
+    if (util_is_nullOrZero (queue) || !queue.split (",").includes (callback)) // XXX prevents duplicates
+      cache_write (__system_schedule_key ("queue"), util_is_nullOrZero (queue) ? callback : (queue + "," + callback));
   });
   store_inc ("system", "schedule", "push");
 }
@@ -284,15 +279,15 @@ function __system_schedule_pull () {
     return callback;
   }), arguments = undefined;
   if (!util_is_nullOrZero(callback)) {
-      store_inc ("system", "schedule", "pull");
-      if (callback.includes (":") && ([callback, arguments] = callback.split (":")) [1].length > 0) 
-        arguments = JSON.parse (unescape_comma (arguments));
+    store_inc ("system", "schedule", "pull");
+    if (callback.includes (":") && ([callback, arguments] = callback.split (":")) [1].length > 0)
+      arguments = JSON.parse (__args_decode (arguments));
   }
   return [callback, arguments];
 }
 function __system_schedule_size () {
   return util_lock_wrapper ("Script", util_lock_seconds (30), () => {
-    var queue = cache_read (__system_schedule_key ("queue"));
+    const queue = cache_read (__system_schedule_key ("queue"));
     return (util_is_nullOrZero (queue)) ? 0 : queue.split (",").length;
   });
 }
@@ -326,20 +321,20 @@ var __system__exe = this ['APPLICATION_RUNNER'] ? this ['APPLICATION_RUNNER'] : 
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function runner_suspend (desired, origin = undefined) {
-  var current = store_get ("system", "state", "suspended") == undefined ? false : true;
+  const current = store_get ("system", "state", "suspended") == undefined ? false : true;
   if (current == desired) return;
-  var mode = (desired == true) ? "suspended" : "resumed", message = origin ? [ origin ] : Array ();
+  const mode = (desired == true) ? "suspended" : "resumed", message = origin ? [ origin ] : Array ();
   if (desired == true)
     store_set (util_date_strAsISO (), "system", "state", "suspended");
   else if (desired == false) {
-    var suspended = store_get ("system", "state", "suspended"); store_clr ("system", "state", "suspended");
+    const suspended = store_get ("system", "state", "suspended"); store_clr ("system", "state", "suspended");
     if (suspended) message.push ("after " + util_str_niceSecsAsDays (util_date_epochDiffInSecs (util_date_epochFromStr (suspended))));
   }
   system_info ("runner", mode + (message.length > 0 ? (", " + message.join (", ")): ""));
   store_inc ("system", "runner", mode);
 }
 function runner_suspend_wrapper (f, r) {
-  var x = runner_suspended ();
+  const x = runner_suspended ();
   if (!x) runner_suspend (true, r);
   try {
     f ();
@@ -357,16 +352,16 @@ function runner_suspended () {
 
 function __runner_isdone () {
   const __RUNNER_TIME_EXPIRE = 5*60;
-  var timestart = store_get ("system", "state", "start-time");
+  const timestart = store_get ("system", "state", "start-time");
   if (util_is_null (timestart)) return true;
-  var duration = util_date_epochDiffInSecs (timestart);
+  const duration = util_date_epochDiffInSecs (timestart);
   if (duration >= __RUNNER_TIME_EXPIRE) return true;
   if (!util_is_null (store_get ("system", "state", "suspended"))) return true;
   return false;
 }
 function __runner_start () {
   const __RUNNER_TIME_ABORT = 7*60;
-  var started = util_lock_wrapper ("Script", util_lock_seconds (30), () => {
+  const started = util_lock_wrapper ("Script", util_lock_seconds (30), () => {
     var timestart = store_get ("system", "state", "start-time");
     if (!util_is_null (timestart) && (util_date_epochDiffInSecs (timestart) < __RUNNER_TIME_ABORT)) return false;
     if (!util_is_null (timestart)) {
@@ -374,7 +369,8 @@ function __runner_start () {
       store_inc ("system", "runner", "cancelled");
       system_error ("runner", "cancelled");
     }
-    store_set (util_date_epoch (), "system", "state", "start-time");
+    store_set (timestart = util_date_epoch (), "system", "state", "start-time");
+    store_set (timestart, "system", "state", "start-last");
     return true;
   });
   if (started == true)
@@ -382,19 +378,14 @@ function __runner_start () {
   return started;
 }
 function __runner_end (t, m) {
-  var timestart = store_get ("system", "state", "start-time"), duration = 0;
-  if (!util_is_null (timestart)) {
-    store_clr ("system", "state", "start-time");
-    duration = util_date_epochDiffInSecs (timestart);
-  }
-  //system_debug ("runner", t + ": at " + duration + " seconds (" + util_str_niceSecsAsDays (duration) + ")" + (m ? ", " + m : ""));
+  store_clr ("system", "state", "start-time");
   store_inc ("system", "runner", t);
 }
 function __runner_execute () {
   try {
     if (!__runner_start ())
       return false;
-    var ran = this [__system__exe] (__runner_isdone);
+    const ran = this [__system__exe] (__runner_isdone);
     __runner_end ("completed", "ran " + ran + (ran == false ? " (no-respawn)" : ""));
     return ran;
   } catch (e) {
@@ -431,10 +422,10 @@ function __system_runner () {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __connect_urlFetch (u) {
-  const __day = util_date_arrAsyyyymmdd (), d_i = __day [0] + "-" + ((__day [1] < 10) ? "0" + __day [1] : __day [1]), d_j = (__day [2] < 10) ? "0" + __day [2] : __day [2];
+  const __day = util_date_arrAsyyyymmddhhmmss (), d_i = __day [0] + "-" + ((__day [1] < 10) ? "0" + __day [1] : __day [1]), d_j = (__day [2] < 10) ? "0" + __day [2] : __day [2];
   store_inc ("system", "connect", d_i, d_j);
   try {
-    var r = UrlFetchApp.fetch (u);
+    const r = UrlFetchApp.fetch (u);
 /*    if (r == undefined || r.getResponseCode () == 404)
       throw (" ... no response, or 404 error");
     if (r.getResponseCode () >= 500 && r.getResponseCode () <= 599)
@@ -446,11 +437,11 @@ function __connect_urlFetch (u) {
 }
 
 function __connect_urlResponse (name, url, opts, detail) {
-  const __day = util_date_arrAsyyyymmdd (), d_i = __day [0] + "-" + ((__day [1] < 10) ? "0" + __day [1] : __day [1]), d_j = (__day [2] < 10) ? "0" + __day [2] : __day [2];
+  const __day = util_date_arrAsyyyymmddhhmmss (), d_i = __day [0] + "-" + ((__day [1] < 10) ? "0" + __day [1] : __day [1]), d_j = (__day [2] < 10) ? "0" + __day [2] : __day [2];
   store_inc ("system", "connect", d_i, d_j); // XXX for now
   opts.muteHttpExceptions = true;
   debugLog (detail + ": " + name + " --> " + url + " opts: " + JSON.stringify (opts));
-  var r = UrlFetchApp.fetch (url, opts);
+  const r = UrlFetchApp.fetch (url, opts);
   debugLog ("--> " + r.getResponseCode ());
   if (r == undefined || (r.getResponseCode () != 200 && r.getResponseCode () != 201 && r.getResponseCode () != 204))
     return system_error_throw (name, "HTTP transport error (#" + r.getResponseCode () + "): ", url,
@@ -458,39 +449,39 @@ function __connect_urlResponse (name, url, opts, detail) {
   return r;
 }
 
-function connect_urlRawResponse (name, url, opts) {
+function connect_urlRawResponse (name, url, opts = { method: 'GET' }, type = "text") {
   store_inc ("system", "connect", "raw-" + util_str_lower (opts.method), util_str_isolateURI (url));
-  var r = __connect_urlResponse (name, url, opts, "connect_urlRawResponse");
+  const r = __connect_urlResponse (name, url, opts, "connect_urlRawResponse");
   if (r.getResponseCode () == 204)
     return "";
   debugLog ("["+(r.getContentText ().length)+"]" + util_str_presentable (r.getContentText (), 128));
-  return r.getContentText ();
+  return (type == 'text') ? r.getContentText () : r.getContent ();
 }
 
-function connect_urlJsonResponse (name, url, opts) {
+function connect_urlJsonResponse (name, url, opts = { method: 'GET'}) {
   store_inc ("system", "connect", "jsn-" + util_str_lower (opts.method), util_str_isolateURI (url));
-  var r = __connect_urlResponse (name, url, opts, "connect_urlJsonResponse");
+  const r = __connect_urlResponse (name, url, opts, "connect_urlJsonResponse");
   if (r.getResponseCode () == 204)
     return "";
   debugLog ("["+(r.getContentText ().length)+"] " + r.getContentText ().slice (0, 128) + " ...");
-  var d = JSON.parse (r.getContentText ());
+  const d = JSON.parse (r.getContentText ());
   return (!util_is_null (d)) ? d :
     system_error_throw (name, "JSON parser error", url, util_str_presentable (r.getContentText (), 128)); // does not return
 }
 
 function connect_urlXmlResponse (name, url) {
   store_inc ("system", "connect", "xml-get", util_str_isolateURI (url));
-  var r = __connect_urlResponse (name, url, { }, "connect_urlXmlResponse");
+  const r = __connect_urlResponse (name, url, { }, "connect_urlXmlResponse");
   if (!(util_str_includes (r.getContentText (), "<") || util_str_includes (r.getContentText (), ">")))
     return system_error_throw (name, "XML response is not XML: ", url, util_str_presentable (r.getContentText (), 128)); // does not return
   debugLog ("["+(r.getContentText ().length)+"] " + r.getContentText ().slice (0, 128) + " ...");
-  var d = XmlService.parse (r.getContentText ());
+  const d = XmlService.parse (r.getContentText ());
   return (!util_is_null (d) && !util_is_null (d.getRootElement ())) ? d.getRootElement () :
     system_error_throw (name, "XML parser error", url, util_str_presentable (r.getContentText (), 128)); // does not return
 }
 
 function connect_urlCachableResponse (name, url, timeout, forced = false) {
-  var data, uri = util_str_isolateURI (url);
+  var data; const uri = util_str_isolateURI (url);
   if (forced == false && !util_is_null (data = data_cache_gets (uri, true))) {
     store_inc ("system", "connect", "cache-get", uri);
   } else {
@@ -502,7 +493,6 @@ function connect_urlCachableResponse (name, url, timeout, forced = false) {
 }
 
 function connect_cnt () {
-//var d = util_date_strAsyyyymmdd (); return store_get ("system", "connect", util_str_substr (d, 0, 7), util_str_substr (d, 8, 2)) * 1.0;
   return Object.values (store_lst ("system", "cache", "connect")).length;
 }
 function connect_len () {
@@ -513,16 +503,16 @@ function connect_len () {
 // -----------------------------------------------------------------------------------------------------------------------------------------
 
 function __h_key (h, t) { return "H_" + (h != undefined ? h : "") + (t != undefined ? t : ""); }
-function __h_get (h, t) { var x = cache_read (__h_key (h, t)); return !util_is_nullOrZero (x) ? x.split (",") : Array (); }
+function __h_get (h, t) { const x = cache_read (__h_key (h, t)); return !util_is_nullOrZero (x) ? x.split (",") : Array (); }
 function __h_set (h, t, x) { cache_write (__h_key (h, t), x.join (",")); }
 function __h_run (v, t, e) { return util_function_call (v, t, e) ? 1 : 0 }
 function handler_rst (h) { return util_num_sum (cache_lst (__h_key (h)).map (v => cache_del (v.k) ? 1 : 0)); }
 function handler_cnt (h) { return cache_lst (__h_key (h)).length; }
 function handler_lst (h) { return cache_lst (__h_key (h)).map (v => ({ k: util_str_remove (v.k, __h_key (h)), v: v.v.split (",") })); }
-function handler_insert (h, t, f) { store_inc ("system", "handler", h, "insert"); var x = __h_get (h, t); if (!x.includes (f)) x.push (f), __h_set (h, t, x); }
-function handler_remove (h, t, f) { store_inc ("system", "handler", h, "remove"); var x = __h_get (h, t); if (x.includes (f)) x.splice (x.indexOf (f), 1), __h_set (h, t, x); }
+function handler_insert (h, t, f) { store_inc ("system", "handler", h, "insert"); const x = __h_get (h, t); if (!x.includes (f)) x.push (f), __h_set (h, t, x); }
+function handler_remove (h, t, f) { store_inc ("system", "handler", h, "remove"); const x = __h_get (h, t); if (x.includes (f)) x.splice (x.indexOf (f), 1), __h_set (h, t, x); }
 function handler_iterate (h, t, e) { store_inc ("system", "handler", h, "iterate"); return util_num_sum (__h_get (h, t).map (v => util_exception_wrapper (
-  () => util_function_exists (v) ?  __h_run (v, t, e) : handler_remove (h, t, v) && system_debug ("system", "handler ("+h+") [" + t + ", " + v + "], pruned"), 
+  () => util_function_exists (v) ?  __h_run (v, t, e) : handler_remove (h, t, v) && system_debug ("system", "handler ("+h+") [" + t + ", " + v + "], pruned"),
   (e) => system_error ("system", "handler ("+h+") [" + t + ", " + v + "], exception", undefined, util_str_error (e)))).filter (v => !util_is_null (v))); }
 function handler_debug () { return handler_lst ().map (v => v.k + " --> " + util_str_join (v.v, ", ")).sort (); }
 
@@ -559,7 +549,7 @@ function config_match (c, i, q) {
   return Object.values (c).find (x => (!util_is_nullOrZero (x [i]) && (util_is_null (q) || q == x [i])));
 }
 function config_find (c, i, s) {
-  var x = Object.keys (c).find (x => (!util_is_nullOrZero (c [x][i]) && (util_is_null (s) || s == x))); return util_is_nullOrZero (x) ? x : c [x][i];
+  const x = Object.keys (c).find (x => (!util_is_nullOrZero (c [x][i]) && (util_is_null (s) || s == x))); return util_is_nullOrZero (x) ? x : c [x][i];
 }
 function config_list (c, i) {
   return Object.keys (c).filter (x => (!util_is_nullOrZero (c [x][i])));
@@ -571,7 +561,7 @@ function config_exec (c, f, i, s) {
 function config_exec2 (c, f, i, s) {
   function __match (a, b) { return (util_is_null (a) || a == b || util_str_matchsimplewildcards (b, a)); }
   return util_array_runnerY (a => Object.keys (c).filter (x => (!util_is_nullOrZero (c [x][i]) && __match (a, x))).reduce ((p, x) =>
-    { var r = f (x, c [x], i, c [x][i]); if (!util_is_null (r)) p.push (r); return p; }, Array ()), s);
+    { const r = f (x, c [x], i, c [x][i]); if (!util_is_null (r)) p.push (r); return p; }, Array ()), s);
 }
 function config_cnt () {
   return Object.keys (config_data ()).length;
@@ -587,21 +577,16 @@ function __system_deployments_url () {
   return "https://script.googleapis.com/v1/projects/";
 }
 function __system_deployments_execute (s, p) {
-  var r = connect_urlJsonResponse ("system",
+  const r = connect_urlJsonResponse ("system",
     __system_deployments_url () + ScriptApp.getScriptId () + "/deployments?pageSize=50" + (!util_is_nullOrZero (p) ? "&pageToken=" + p : ""),
     { method: "GET", headers: { "Authorization": "Bearer " + s.getAccessToken () }, contentType: "application/json" });
-  var d = r.deployments.filter (v => v.entryPoints.some (vv => vv.entryPointType == "WEB_APP"));
+  const d = r.deployments.filter (v => v.entryPoints.some (vv => vv.entryPointType == "WEB_APP"));
   return util_is_nullOrZero (r.nextPageToken) ? d : util_concat (d, __system_deployments_execute (s, r.nextPageToken));
 }
 function system_deployments () {
   store_inc ("system", "deployments");
   return util_is_nullOrZero (__SYSTEM_SERVICE_CFG ['PRIVATE_KEY']) ? undefined : util_exception_wrapper (() => __system_deployments_execute (__system_serviceScriptAPI ()), e => Array ());
 }
-/*function __system_execution_data () { // XXX TODO ... need permissions
-  var r = connect_urlJsonResponse ("system",
-    __system_deployments_url () + ScriptApp.getScriptId () + "/metrics?metricsGranularity=DAILY",
-    { method: "GET", headers: { "Authorization": "Bearer " + __system_serviceScriptAPI ().getAccessToken () }, contentType: "application/json" });
-}*/
 
 function __system_serviceScriptAPI () {
   return OAuth2.createService ('script_api')
@@ -614,7 +599,7 @@ function __system_serviceScriptAPI () {
 }
 
 function deployments_cnt () {
-  var s = system_deployments (); return util_is_nullOrZero (s) ? 0 : s.length;
+  const s = system_deployments (); return util_is_nullOrZero (s) ? 0 : s.length;
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------------
